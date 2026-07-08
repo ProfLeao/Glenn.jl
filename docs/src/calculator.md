@@ -1,0 +1,23 @@
+```@meta
+CurrentModule = Glenn
+```
+
+# Calculator API
+
+High-level interface for calculating thermochemical properties.
+
+```@docs
+Calculator
+default_db_path
+get_available_species
+calculate_properties
+calculate_formation_enthalpy
+calculate_enthalpy_change
+get_properties_range
+```
+
+## Constants
+
+```@docs
+Glenn.ThermoDatabase.R_UNIVERSAL
+```

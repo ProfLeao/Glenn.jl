@@ -2,3 +2,4 @@
 /other
 *.db
 !/data/thermo.db
+/docs/build/
