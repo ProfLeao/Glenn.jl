@@ -2,6 +2,8 @@
 CurrentModule = Glenn
 ```
 
+![Glenn.jl logo](assets/logo_glennjl.png)
+
 # Glenn.jl — Thermochemical Properties Calculator
 
 Computes **Cp(T)**, **H°(T)**, **S°(T)** from NASA-7 polynomial coefficients stored in a SQLite database (`thermo.db`).
