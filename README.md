@@ -80,7 +80,10 @@ close(calc)
 | `ThermoDB(path)` | Raw SQLite connection |
 | `get_statistics(tdb)` | Database summary stats |
 | `find_species(tdb, name)` | Search species by name |
+| `list_species_page(tdb; page, page_size)` | Paginated species listing |
+| `list_all_species(tdb)` | All species in a single query |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
+| `get_species_info(tdb, id)` | Lightweight species metadata only |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
 | `calculate_cp(coeffs, T)` | Cp/R (dimensionless) |
 | `calculate_h(coeffs, T)` | H/RT (dimensionless) |

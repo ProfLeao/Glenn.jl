@@ -73,19 +73,8 @@ Return a list of available species, optionally filtered by name pattern.
 """
 function get_available_species(calc::Calculator, pattern::AbstractString="")
     if isempty(pattern)
-        species_list = Dict{String, Any}[]
-        page = 1
-        while true
-            sp, total_pages = ThermoDatabase.list_species_page(
-                calc.db, page=page, page_size=100)
-            if isempty(sp)
-                break
-            end
-            append!(species_list, sp)
-            page >= total_pages && break
-            page += 1
-        end
-        return species_list
+        # Single query for all species — much faster than paginating
+        return ThermoDatabase.list_all_species(calc.db)
     else
         return ThermoDatabase.find_species(calc.db, pattern)
     end
@@ -113,8 +102,9 @@ Returns a Dict with keys:
 Returns `nothing` if the temperature is out of range or species not found.
 """
 function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
-    species_data = ThermoDatabase.get_species_data(calc.db, species_id)
-    if species_data === nothing
+    # Lightweight lookup: only need name & phase, not all intervals/coeffs
+    info = ThermoDatabase.get_species_info(calc.db, species_id)
+    if info === nothing
         @warn "Species ID $species_id not found in database."
         return nothing
     end
@@ -123,10 +113,8 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
         calc.db, species_id, T)
 
     if interval_data === nothing
-        intervals = get(species_data, "intervals", [])
-        available = [(i["temp_min"], i["temp_max"]) for i in intervals]
-        @warn "Temperature $T K is out of valid range for $(species_data["name"])." *
-              " Available intervals: $available"
+        @warn "Temperature $T K is out of valid range for $(info["name"])." *
+              " Use get_species_data($species_id) to check available intervals."
         return nothing
     end
 
@@ -143,8 +131,8 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
         "s"             => s_r * R,
         "temp_min"      => interval_data["temp_min"],
         "temp_max"      => interval_data["temp_max"],
-        "species_name"  => species_data["name"],
-        "phase"         => species_data["phase"],
+        "species_name"  => info["name"],
+        "phase"         => info["phase"],
     )
 end
 

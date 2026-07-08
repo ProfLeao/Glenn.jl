@@ -158,6 +158,22 @@ function list_species_page(tdb::ThermoDB; page::Int=1, page_size::Int=20)
 end
 
 """
+    list_all_species(tdb::ThermoDB) -> Vector{Dict}
+
+Return all species in a single query (no pagination).
+Faster than paginating when you need the full list.
+"""
+function list_all_species(tdb::ThermoDB)
+    result = SQLite.DBInterface.execute(tdb.db, """
+        SELECT id, name, formula, phase, molecular_weight,
+               heat_of_formation_298K, num_intervals
+        FROM species
+        ORDER BY name
+    """)
+    return [Dict{String, Any}(String(k) => v for (k, v) in pairs(r)) for r in result]
+end
+
+"""
     get_species_data(tdb::ThermoDB, species_id::Int) -> Union{Dict, Nothing}
 
 Get complete data for a species including all its temperature intervals
@@ -201,6 +217,29 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
     data["intervals"] = intervals
 
     return data
+end
+
+"""
+    get_species_info(tdb::ThermoDB, species_id::Int) -> Union{Dict, Nothing}
+
+Lightweight lookup: returns basic species metadata (id, name, formula,
+phase, molecular_weight, heat_of_formation_298K) without loading
+temperature intervals or coefficients.
+
+Use this when you only need species identification, not the full
+thermochemical data.
+"""
+function get_species_info(tdb::ThermoDB, species_id::Int)
+    result = SQLite.DBInterface.execute(tdb.db, """
+        SELECT id, name, formula, phase, molecular_weight,
+               heat_of_formation_298K, num_intervals
+        FROM species WHERE id = ?
+    """, (species_id,))
+
+    for row in result
+        return Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+    end
+    return nothing
 end
 
 """

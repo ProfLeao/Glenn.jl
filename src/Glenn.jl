@@ -44,9 +44,9 @@ const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
 const Calculator = ThermoCalculator.Calculator
 
 # Database functions
-using .ThermoDatabase: find_species, list_species_page, get_species_data,
-    get_species_for_temperature, get_statistics,
-    calculate_cp, calculate_h, calculate_s
+using .ThermoDatabase: find_species, list_species_page, list_all_species,
+    get_species_data, get_species_info, get_species_for_temperature,
+    get_statistics, calculate_cp, calculate_h, calculate_s
 
 # Calculator functions (high-level API)
 using .ThermoCalculator: get_available_species, calculate_properties,
@@ -61,9 +61,9 @@ export Calculator
 export R_UNIVERSAL
 export default_db_path
 
-export find_species, list_species_page, get_species_data,
-       get_species_for_temperature, get_statistics,
-       calculate_cp, calculate_h, calculate_s
+export find_species, list_species_page, list_all_species,
+       get_species_data, get_species_info, get_species_for_temperature,
+       get_statistics, calculate_cp, calculate_h, calculate_s
 
 export get_available_species, calculate_properties,
        calculate_formation_enthalpy, calculate_enthalpy_change,
