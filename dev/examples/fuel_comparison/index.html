@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Fuel Comparison · Glenn.jl</title><meta name="title" content="Fuel Comparison · Glenn.jl"/><meta property="og:title" content="Fuel Comparison · Glenn.jl"/><meta property="twitter:title" content="Fuel Comparison · Glenn.jl"/><meta name="description" content="Documentation for Glenn.jl."/><meta property="og:description" content="Documentation for Glenn.jl."/><meta property="twitter:description" content="Documentation for Glenn.jl."/><meta property="og:url" content="https://profl.github.io/Glenn.jl/stable/examples/fuel_comparison/"/><meta property="twitter:url" content="https://profl.github.io/Glenn.jl/stable/examples/fuel_comparison/"/><link rel="canonical" href="https://profl.github.io/Glenn.jl/stable/examples/fuel_comparison/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/logo-sidebar.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Glenn.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">API Reference</span><ul><li><a class="tocitem" href="../../calculator/">Calculator</a></li><li><a class="tocitem" href="../../database/">Database</a></li><li><a class="tocitem" href="../../builder/">Builder</a></li><li><a class="tocitem" href="../../cli/">CLI</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../basic_usage/">Basic Usage</a></li><li class="is-active"><a class="tocitem" href>Fuel Comparison</a><ul class="internal"><li><a class="tocitem" href="#Resolving-the-identifiers"><span>Resolving the identifiers</span></a></li><li><a class="tocitem" href="#Collecting-properties-over-300–2000-K"><span>Collecting properties over 300–2000 K</span></a></li><li><a class="tocitem" href="#Specific-heat-C_p(T)"><span>Specific heat <span>$C_p(T)$</span></span></a></li><li><a class="tocitem" href="#Sensible-enthalpy-\\Delta-H(298.15\\,\\mathrm{K}-\\to-T)"><span>Sensible enthalpy <span>$\Delta H(298.15\,\mathrm{K} \to T)$</span></span></a></li><li><a class="tocitem" href="#Numerical-summary-at-reference-points"><span>Numerical summary at reference points</span></a></li><li><a class="tocitem" href="#Reading-the-results"><span>Reading the results</span></a></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Fuel Comparison</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Fuel Comparison</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/ProfLeao/Glenn.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/ProfLeao/Glenn.jl/blob/main/docs/src/examples/fuel_comparison.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Thermochemical-comparison-of-fuels"><a class="docs-heading-anchor" href="#Thermochemical-comparison-of-fuels">Thermochemical comparison of fuels</a><a id="Thermochemical-comparison-of-fuels-1"></a><a class="docs-heading-anchor-permalink" href="#Thermochemical-comparison-of-fuels" title="Permalink"></a></h1><p>This tutorial compares the thermal behavior of three fuels of interest in energy systems, using <strong>Glenn.jl</strong>:</p><table><tr><th style="text-align: right">Species</th><th style="text-align: right">Fuel</th></tr><tr><td style="text-align: right"><code>CH4</code></td><td style="text-align: right">Methane (natural gas)</td></tr><tr><td style="text-align: right"><code>C2H5OH</code></td><td style="text-align: right">Ethanol (biofuel)</td></tr><tr><td style="text-align: right"><code>C3H8</code></td><td style="text-align: right">Propane (LPG)</td></tr></table><p>We will visualize <span>$C_p(T)$</span>, <span>$S^\circ(T)$</span> and the sensible enthalpy change <span>$\Delta H(298.15\,\mathrm{K} \to T)$</span> over a temperature range relevant to combustion.</p><h2 id="Resolving-the-identifiers"><a class="docs-heading-anchor" href="#Resolving-the-identifiers">Resolving the identifiers</a><a id="Resolving-the-identifiers-1"></a><a class="docs-heading-anchor-permalink" href="#Resolving-the-identifiers" title="Permalink"></a></h2><p><code>get_available_species</code> matches by substring, so we filter by exact name and gas phase to get the correct <code>id</code> for each species.</p><pre><code class="language-julia hljs">using Glenn
+
+FUELS = Dict(
+    &quot;CH4&quot;    =&gt; &quot;Methane (natural gas)&quot;,
+    &quot;C2H5OH&quot; =&gt; &quot;Ethanol&quot;,
+    &quot;C3H8&quot;   =&gt; &quot;Propane (LPG)&quot;,
+)
+
+function resolve_id(calc, name, phase=&quot;gas&quot;)
+    for s in get_available_species(calc, name)
+        if s.name == name &amp;&amp; s.phase == phase
+            return s.id
+        end
+    end
+    error(&quot;Species &#39;$name&#39; ($phase) not found&quot;)
+end
+
+calc = Calculator()
+ids = Dict(name =&gt; resolve_id(calc, name) for name in keys(FUELS))
+
+for (name, sid) in ids
+    println(&quot;  &quot;, rpad(name, 8), &quot; -&gt; id &quot;, sid)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">  C3H8     -&gt; id 393
+  CH4      -&gt; id 296
+  C2H5OH   -&gt; id 370</code></pre><h2 id="Collecting-properties-over-300–2000-K"><a class="docs-heading-anchor" href="#Collecting-properties-over-300–2000-K">Collecting properties over 300–2000 K</a><a id="Collecting-properties-over-300–2000-K-1"></a><a class="docs-heading-anchor-permalink" href="#Collecting-properties-over-300–2000-K" title="Permalink"></a></h2><p>We use <code>get_properties_range</code> to evaluate all temperatures at once. The 300–2000 K range spans from ambient conditions up to typical flames.</p><pre><code class="language-julia hljs">temperatures = collect(300:50:2000)
+
+data = Dict()
+for (name, sid) in ids
+    results = get_properties_range(calc, sid, temperatures)
+    Ts = [r.temperature for r in results]
+    cp_vals = [r.cp for r in results]
+    s_vals = [r.s for r in results]
+    dh_vals = [
+        calculate_enthalpy_change(calc, sid, 298.15, T) / 1000.0
+        for T in Ts
+    ]  # kJ/mol
+    data[name] = Dict(
+        &quot;T&quot;  =&gt; Ts,
+        &quot;cp&quot; =&gt; cp_vals,
+        &quot;s&quot;  =&gt; s_vals,
+        &quot;dh&quot; =&gt; dh_vals,
+    )
+end
+
+println(&quot;Properties collected for: &quot;, join(keys(data), &quot;, &quot;))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Properties collected for: C3H8, CH4, C2H5OH</code></pre><h2 id="Specific-heat-C_p(T)"><a class="docs-heading-anchor" href="#Specific-heat-C_p(T)">Specific heat <span>$C_p(T)$</span></a><a id="Specific-heat-C_p(T)-1"></a><a class="docs-heading-anchor-permalink" href="#Specific-heat-C_p(T)" title="Permalink"></a></h2><p class="math-container">\[C_p\]</p><p>rises with temperature as more vibrational modes become active. Larger molecules (ethanol, propane) have higher <span>$C_p$</span> because they have more degrees of freedom.</p><pre><code class="language-julia hljs">using Plots
+gr()
+
+p1 = plot(
+    title  = &quot;Molar specific heat at constant pressure&quot;,
+    xlabel = &quot;Temperature (K)&quot;,
+    ylabel = &quot;Cp  (J·mol⁻¹·K⁻¹)&quot;,
+    legend = :topleft,
+    grid   = true,
+)
+colors = palette(:default, length(data))
+for (i, (name, d)) in enumerate(data)
+    plot!(p1, d[&quot;T&quot;], d[&quot;cp&quot;], label=FUELS[name], lw=2, color=colors[i])
+end
+p1</code></pre><img src="1f1be96d.svg" alt="Example block output"/><h2 id="Sensible-enthalpy-\\Delta-H(298.15\\,\\mathrm{K}-\\to-T)"><a class="docs-heading-anchor" href="#Sensible-enthalpy-\\Delta-H(298.15\\,\\mathrm{K}-\\to-T)">Sensible enthalpy <span>$\Delta H(298.15\,\mathrm{K} \to T)$</span></a><a id="Sensible-enthalpy-\\Delta-H(298.15\\,\\mathrm{K}-\\to-T)-1"></a><a class="docs-heading-anchor-permalink" href="#Sensible-enthalpy-\\Delta-H(298.15\\,\\mathrm{K}-\\to-T)" title="Permalink"></a></h2><p>This is the heat required to warm 1 mol of fuel from 298.15 K up to <span>$T$</span> — a central quantity in energy balances for preheating and heat recovery (HRSG).</p><pre><code class="language-julia hljs">p2 = plot(
+    title  = &quot;Sensible enthalpy relative to 298.15 K&quot;,
+    xlabel = &quot;Temperature (K)&quot;,
+    ylabel = &quot;ΔH  (kJ·mol⁻¹)&quot;,
+    legend = :topleft,
+    grid   = true,
+)
+hline!(p2, [0.0], color=:gray, lw=0.8, label=nothing)
+for (i, (name, d)) in enumerate(data)
+    plot!(p2, d[&quot;T&quot;], d[&quot;dh&quot;], label=FUELS[name], lw=2, color=colors[i])
+end
+p2</code></pre><img src="836735c7.svg" alt="Example block output"/><h2 id="Numerical-summary-at-reference-points"><a class="docs-heading-anchor" href="#Numerical-summary-at-reference-points">Numerical summary at reference points</a><a id="Numerical-summary-at-reference-points-1"></a><a class="docs-heading-anchor-permalink" href="#Numerical-summary-at-reference-points" title="Permalink"></a></h2><p>Direct comparison of <span>$C_p$</span> and <span>$S^\circ$</span> at three temperatures of interest.</p><pre><code class="language-julia hljs">using Printf
+targets = [300, 1000, 2000]
+println(rpad(&quot;Fuel&quot;, 22), &quot; &quot;, lpad(&quot;T (K)&quot;, 6), &quot; &quot;, lpad(&quot;Cp&quot;, 10), &quot; &quot;, lpad(&quot;S°&quot;, 10))
+println(&quot;-&quot;^50)
+for (name, d) in data
+    for T in targets
+        i = findfirst(x -&gt; x == Float64(T), d[&quot;T&quot;])
+        if i !== nothing
+            @printf(&quot;%-22s %6d %10.3f %10.3f\n&quot;,
+                FUELS[name], T, d[&quot;cp&quot;][i], d[&quot;s&quot;][i])
+        end
+    end
+    println()
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Fuel                    T (K)         Cp         S°
+--------------------------------------------------
+Propane (LPG)             300     73.955    270.770
+Propane (LPG)            1000    174.613    417.339
+Propane (LPG)            2000    221.955    556.442
+
+Methane (natural gas)     300     35.760    186.591
+Methane (natural gas)    1000     73.676    248.330
+Methane (natural gas)    2000    101.442    309.447
+
+Ethanol                   300     65.593    280.996
+Ethanol                  1000    142.689    404.550
+Ethanol                  2000    178.201    516.949</code></pre><pre><code class="language-julia hljs">close(calc)</code></pre><h2 id="Reading-the-results"><a class="docs-heading-anchor" href="#Reading-the-results">Reading the results</a><a id="Reading-the-results-1"></a><a class="docs-heading-anchor-permalink" href="#Reading-the-results" title="Permalink"></a></h2><ul><li><strong>Ethanol</strong> and <strong>propane</strong>, being larger molecules, show higher <span>$C_p$</span> and <span>$S^\circ$</span> than <strong>methane</strong> across the whole range.</li><li>The sensible enthalpy grows almost linearly at high temperatures, reflecting the plateau of <span>$C_p$</span>.</li><li>These data feed energy balances in combustion chambers, gasifiers and power cycles.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../basic_usage/">« Basic Usage</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Sunday 19 July 2026 22:05">Sunday 19 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
