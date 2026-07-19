@@ -14,7 +14,7 @@ makedocs(
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://profl.github.io/Glenn.jl/stable/",
-        assets = ["assets/logo_glennjl.png"],
+        assets = ["assets/logo-sidebar.css"],
     ),
     pages = [
         "Home" => "index.md",

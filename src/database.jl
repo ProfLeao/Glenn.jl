@@ -257,13 +257,15 @@ Missing fields default to `nothing`.
 """
 function _row_to_speciesinfo(row)
     d = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+    _str_or_nothing(x) = x === nothing || ismissing(x) ? nothing : String(x)
+    _float_or_nothing(x) = x === nothing || ismissing(x) ? nothing : Float64(x)
     return SpeciesInfo(
         d["id"],
         d["name"],
-        get(d, "formula", nothing),
+        _str_or_nothing(get(d, "formula", nothing)),
         d["phase"],
-        get(d, "molecular_weight", nothing),
-        get(d, "heat_of_formation_298K", nothing),
+        _float_or_nothing(get(d, "molecular_weight", nothing)),
+        _float_or_nothing(get(d, "heat_of_formation_298K", nothing)),
         get(d, "num_intervals", 0),
     )
 end
@@ -275,6 +277,7 @@ Convert a SQLite result row (interval JOIN coefficients) to an `IntervalData` st
 """
 function _row_to_intervaldata(row)
     d = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+    _float_or_nothing(x) = x === nothing || ismissing(x) ? nothing : Float64(x)
     coeffs = NASACoefficients(
         Float64(get(d, "a1", 0.0)), Float64(get(d, "a2", 0.0)),
         Float64(get(d, "a3", 0.0)), Float64(get(d, "a4", 0.0)),
@@ -287,7 +290,7 @@ function _row_to_intervaldata(row)
         get(d, "interval_number", 0),
         d["temp_min"],
         d["temp_max"],
-        get(d, "h_298_to_0", nothing),
+        _float_or_nothing(get(d, "h_298_to_0", nothing)),
         coeffs,
     )
 end
