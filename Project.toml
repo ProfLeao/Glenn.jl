@@ -4,6 +4,7 @@ authors = ["Reginaldo Leão"]
 version = "1.0.0-DEV"
 
 [deps]
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 
