@@ -25,37 +25,37 @@ using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
 builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+ThermoBuilder.connect(builder)
+ThermoBuilder.create_tables(builder)
+ThermoBuilder.parse_and_load(builder)
+ThermoBuilder.close(builder)
 
 # Or use a custom thermo.inp
 builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+ThermoBuilder.connect(builder)
+ThermoBuilder.create_tables(builder)
+ThermoBuilder.parse_and_load(builder)
+ThermoBuilder.close(builder)
 ```
 
 ## API Reference
 
 ```@docs
 ThermoDBBuilder
-connect(::ThermoDBBuilder)
-create_tables
-parse_and_load
+ThermoBuilder.connect
+ThermoBuilder.create_tables
+ThermoBuilder.parse_and_load
 ```
 
 ## Parser Utilities
 
 ```@docs
-parse_float
-parse_species_record
-parse_general_info_record
-parse_temp_interval_record
-parse_coefficients_record
-is_temperature_line
-is_coefficient_line
-read_thermo_file
+ThermoBuilder.parse_float
+ThermoBuilder.parse_species_record
+ThermoBuilder.parse_general_info_record
+ThermoBuilder.parse_temp_interval_record
+ThermoBuilder.parse_coefficients_record
+ThermoBuilder.is_temperature_line
+ThermoBuilder.is_coefficient_line
+ThermoBuilder.read_thermo_file
 ```

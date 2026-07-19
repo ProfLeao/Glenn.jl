@@ -33,8 +33,8 @@ FUELS = Dict(
 
 function resolve_id(calc, name, phase="gas")
     for s in get_available_species(calc, name)
-        if s["name"] == name && s["phase"] == phase
-            return s["id"]
+        if s.name == name && s.phase == phase
+            return s.id
         end
     end
     error("Species '$name' ($phase) not found")
@@ -59,11 +59,11 @@ temperatures = collect(300:50:2000)
 data = Dict()
 for (name, sid) in ids
     results = get_properties_range(calc, sid, temperatures)
-    Ts = [r["temperature"] for r in results]
-    cp_vals = [r["cp"] for r in results]
-    s_vals = [r["s"] for r in results]
+    Ts = [r.temperature for r in results]
+    cp_vals = [r.cp for r in results]
+    s_vals = [r.s for r in results]
     dh_vals = [
-        something(calculate_enthalpy_change(calc, sid, 298.15, T), 0.0) / 1000.0
+        calculate_enthalpy_change(calc, sid, 298.15, T) / 1000.0
         for T in Ts
     ]  # kJ/mol
     data[name] = Dict(

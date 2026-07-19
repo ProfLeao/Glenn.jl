@@ -14,7 +14,7 @@ makedocs(
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://profl.github.io/Glenn.jl/stable/",
-        assets = ["assets/logo-sidebar.css"],
+        assets = ["assets/logo_glennjl.png"],
     ),
     pages = [
         "Home" => "index.md",
@@ -22,12 +22,12 @@ makedocs(
             "Calculator" => "calculator.md",
             "Database" => "database.md",
             "Builder" => "builder.md",
+            "CLI" => "cli.md",
         ],
         "Examples" => [
             "Basic Usage" => "examples/basic_usage.md",
             "Fuel Comparison" => "examples/fuel_comparison.md",
         ],
-        "CLI" => "cli.md",
     ],
     warnonly = [:missing_docs, :cross_references],
 )

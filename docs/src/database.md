@@ -8,9 +8,21 @@ Low-level SQLite query interface and NASA-7 polynomial calculations.
 
 All thermodynamic functions return **dimensionless** values (divided by R).
 
+## Exception Types
+
+```@docs
+ThermoCalcError
+DatabaseNotConnectedError
+SpeciesNotFoundError
+TemperatureOutOfRangeError
+```
+
 ## Types
 
 ```@docs
+NASACoefficients
+SpeciesInfo
+IntervalData
 Glenn.ThermoDatabase.ThermoDB
 ```
 

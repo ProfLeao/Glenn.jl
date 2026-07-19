@@ -6,8 +6,16 @@ CurrentModule = Glenn
 
 High-level interface for calculating thermochemical properties.
 
+## Types
+
 ```@docs
+ThermoProperties
 Calculator
+```
+
+## Functions
+
+```@docs
 default_db_path
 default_inp_path
 get_available_species
