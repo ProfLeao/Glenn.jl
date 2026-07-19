@@ -27,14 +27,105 @@ println("S° = ", round(props["s"], digits=3), " J/(mol·K)")
 
 close(calc)
 ```
+
+# Context Manager (do-block)
+
+```julia
+using Glenn
+
+# Automatic connect/close with do-block
+Calculator() do calc
+    species = get_available_species(calc, "CH4")
+    props = calculate_properties(calc, species[1]["id"], 500.0)
+    println("Cp = ", round(props["cp"], digits=2), " J/(mol·K)")
+end
+```
 """
 module Glenn
+
+# ------------------------------------------------------------------
+# Version
+# ------------------------------------------------------------------
+"""
+    Glenn.__version__
+
+Package version string.
+"""
+const __version__ = "1.0.0"
+
+"""
+    Glenn.__author__
+
+Package author.
+"""
+const __author__ = "Dr. Reginaldo G. Leão Jr."
+
+# ------------------------------------------------------------------
+# Exception hierarchy
+# ------------------------------------------------------------------
+
+"""
+    ThermoCalcError
+
+Base exception type for thermochemical calculation errors.
+"""
+struct ThermoCalcError <: Exception
+    msg::String
+end
+Base.showerror(io::IO, e::ThermoCalcError) = print(io, "ThermoCalcError: ", e.msg)
+
+"""
+    DatabaseNotConnectedError
+
+Raised when attempting a calculation without an active database connection.
+"""
+struct DatabaseNotConnectedError <: Exception
+    msg::String
+end
+function DatabaseNotConnectedError()
+    return DatabaseNotConnectedError("Calculation attempted without database connection")
+end
+Base.showerror(io::IO, e::DatabaseNotConnectedError) = print(io, "DatabaseNotConnectedError: ", e.msg)
+
+"""
+    SpeciesNotFoundError
+
+Raised when a species ID is not found in the database.
+"""
+struct SpeciesNotFoundError <: Exception
+    msg::String
+    species_id::Int
+end
+function SpeciesNotFoundError(species_id::Int)
+    return SpeciesNotFoundError("Species ID $species_id not found in database", species_id)
+end
+Base.showerror(io::IO, e::SpeciesNotFoundError) = print(io, "SpeciesNotFoundError: ", e.msg)
+
+"""
+    TemperatureOutOfRangeError
+
+Raised when the requested temperature is outside all valid intervals
+for the given species.
+"""
+struct TemperatureOutOfRangeError <: Exception
+    msg::String
+    temperature::Float64
+    species_name::String
+end
+function TemperatureOutOfRangeError(temperature::Float64, species_name::String)
+    return TemperatureOutOfRangeError(
+        "Temperature $temperature K is out of valid range for species '$species_name'",
+        temperature, species_name)
+end
+Base.showerror(io::IO, e::TemperatureOutOfRangeError) = print(io, "TemperatureOutOfRangeError: ", e.msg)
 
 # ------------------------------------------------------------------
 # Submodules
 # ------------------------------------------------------------------
 include("database.jl")    # SQLite queries & NASA-7 polynomial math
 include("calculator.jl")  # High-level calculation API
+include("builder.jl")     # thermo.inp → SQLite database builder
+include("cli.jl")         # Command-line interface
 
 # Bring all public symbols into Glenn namespace
 # ------------------------------------------------------------------
@@ -42,6 +133,8 @@ include("calculator.jl")  # High-level calculation API
 # Constants & types
 const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
 const Calculator = ThermoCalculator.Calculator
+const ThermoDB = ThermoDatabase.ThermoDB
+const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder
 
 # Database functions
 using .ThermoDatabase: find_species, list_species_page, list_all_species,
@@ -51,22 +144,76 @@ using .ThermoDatabase: find_species, list_species_page, list_all_species,
 # Calculator functions (high-level API)
 using .ThermoCalculator: get_available_species, calculate_properties,
     calculate_formation_enthalpy, calculate_enthalpy_change,
-    get_properties_range, default_db_path
+    get_properties_range, default_db_path, default_inp_path
+
+# Builder functions
+using .ThermoBuilder: parse_float, parse_species_record,
+    parse_general_info_record, parse_temp_interval_record,
+    parse_coefficients_record, is_temperature_line, is_coefficient_line,
+    read_thermo_file, connect, create_tables, parse_and_load
+
+# CLI
+using .CLI: cli_main
+
+# Add context manager (do-block) support for Calculator
+# ------------------------------------------------------
+"""
+    Calculator(f::Function, path::AbstractString=default_db_path())
+
+Context manager for Calculator. Use with `do` block syntax for automatic
+connection management.
+
+# Example
+
+```julia
+Calculator() do calc
+    species = get_available_species(calc, "O2")
+    props = calculate_properties(calc, species[1]["id"], 1000.0)
+end
+```
+"""
+function (::Type{Calculator})(f::Function, path::AbstractString=default_db_path())
+    calc = Calculator(path)
+    try
+        f(calc)
+    finally
+        close(calc)
+    end
+end
 
 # ------------------------------------------------------------------
 # Exports (public API)
 # ------------------------------------------------------------------
 
-export Calculator
-export R_UNIVERSAL
-export default_db_path
+# Version & Author
+export __version__, __author__
 
+# Types
+export Calculator, ThermoDB, ThermoDBBuilder
+export R_UNIVERSAL
+export default_db_path, default_inp_path
+
+# Exception types
+export ThermoCalcError, DatabaseNotConnectedError,
+       SpeciesNotFoundError, TemperatureOutOfRangeError
+
+# Database functions (low-level)
 export find_species, list_species_page, list_all_species,
        get_species_data, get_species_info, get_species_for_temperature,
        get_statistics, calculate_cp, calculate_h, calculate_s
 
+# Calculator functions (high-level)
 export get_available_species, calculate_properties,
        calculate_formation_enthalpy, calculate_enthalpy_change,
        get_properties_range
+
+# Builder functions
+export parse_float, parse_species_record,
+       parse_general_info_record, parse_temp_interval_record,
+       parse_coefficients_record, is_temperature_line, is_coefficient_line,
+       read_thermo_file, connect, create_tables, parse_and_load
+
+# CLI
+export cli_main
 
 end # module Glenn
