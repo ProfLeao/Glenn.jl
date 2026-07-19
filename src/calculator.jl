@@ -25,6 +25,17 @@ function default_db_path()
     return normpath(joinpath(@__DIR__, "..", "data", "thermo.db"))
 end
 
+"""
+    default_inp_path() -> String
+
+Return the path to the bundled `thermo.inp` shipped with the package.
+
+Used as the default input for `ThermoDBBuilder` when rebuilding the database.
+"""
+function default_inp_path()
+    return normpath(joinpath(@__DIR__, "..", "data", "thermo.inp"))
+end
+
 # ------------------------------------------------------------------
 # Calculator struct
 # ------------------------------------------------------------------
@@ -60,6 +71,19 @@ Close the underlying database connection.
 """
 function Base.close(calc::Calculator)
     ThermoDatabase.close(calc.db)
+end
+
+"""
+    show(io::IO, calc::Calculator)
+
+Display a clean representation without exposing internal connection details.
+"""
+function Base.show(io::IO, calc::Calculator)
+    print(io, "Calculator(\"thermo.db\")")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", calc::Calculator)
+    print(io, "Calculator(\"thermo.db\")")
 end
 
 # ------------------------------------------------------------------
@@ -147,7 +171,11 @@ function calculate_formation_enthalpy(calc::Calculator, species_id::Int)
         @warn "Species ID $species_id not found."
         return nothing
     end
-    return get(species_data, "heat_of_formation_298K", nothing)
+    hf = get(species_data, "heat_of_formation_298K", nothing)
+    if hf === nothing || ismissing(hf)
+        return nothing
+    end
+    return Float64(hf)
 end
 
 """
