@@ -49,13 +49,13 @@ calc = Calculator()
 
 # Find species by name (partial search)
 species = get_available_species(calc, "O2")
-o2 = only(s for s in species if s["name"] == "O2")
+o2 = only(s for s in species if s.name == "O2")
 
 # Calculate Cp, H°, S° at 1000 K
-props = calculate_properties(calc, o2["id"], 1000.0)
-println("Cp = $(round(props["cp"], digits=2)) J/(mol·K)")
-println("H° = $(round(props["h_relative"], digits=1)) J/mol")
-println("S° = $(round(props["s"], digits=3)) J/(mol·K)")
+props = calculate_properties(calc, o2.id, 1000.0)
+println("Cp = $(round(props.cp, digits=2)) J/(mol·K)")
+println("H° = $(round(props.h_relative, digits=1)) J/mol")
+println("S° = $(round(props.s, digits=3)) J/(mol·K)")
 
 close(calc)
 ```
@@ -67,8 +67,8 @@ using Glenn
 
 Calculator() do calc
     species = get_available_species(calc, "CH4")
-    props = calculate_properties(calc, species[1]["id"], 500.0)
-    println("Cp = $(round(props["cp"], digits=2)) J/(mol·K)")
+    props = calculate_properties(calc, species[1].id, 500.0)
+    println("Cp = $(round(props.cp, digits=2)) J/(mol·K)")
 end
 ```
 
@@ -78,10 +78,10 @@ end
 using Glenn
 
 builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+ThermoBuilder.connect(builder)
+ThermoBuilder.create_tables(builder)
+ThermoBuilder.parse_and_load(builder)
+ThermoBuilder.close(builder)
 ```
 
 ### CLI
@@ -101,7 +101,7 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
 | `Calculator(path)` | Open a custom database |
 | `default_db_path()` | Resolve path to the bundled database |
 | `get_available_species(calc, pattern)` | List/filter species |
-| `calculate_properties(calc, id, T)` | Compute Cp, H°, S° at T (K) |
+| `calculate_properties(calc, id, T)` | Compute Cp, H°, S° at T (K) → `ThermoProperties` |
 | `calculate_formation_enthalpy(calc, id)` | ΔH°f at 298.15 K (J/mol) |
 | `calculate_enthalpy_change(calc, id, T1, T2)` | ΔH = H(T2) − H(T1) |
 | `get_properties_range(calc, id, Ts)` | Properties over multiple T |
@@ -112,10 +112,10 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
 | Function | Description |
 |---|---|
 | `ThermoDBBuilder(inp, db)` | Create a database builder |
-| `connect(builder)` | Open the SQLite database |
-| `create_tables(builder)` | Create normalized schema |
-| `parse_and_load(builder)` | Parse thermo.inp and populate DB |
-| `close(builder)` | Close and commit |
+| `ThermoBuilder.connect(builder)` | Open the SQLite database |
+| `ThermoBuilder.create_tables(builder)` | Create normalized schema |
+| `ThermoBuilder.parse_and_load(builder)` | Parse thermo.inp and populate DB |
+| `ThermoBuilder.close(builder)` | Close and commit |
 
 ### ThermoDatabase (low-level)
 
@@ -133,11 +133,11 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
 
 ## NASA-7 Polynomial Equations
 
-$$\\frac{C_p(T)}{R} = a_1 T^{-2} + a_2 T^{-1} + a_3 + a_4 T + a_5 T^2 + a_6 T^3 + a_7 T^4$$
+$$\frac{C_p(T)}{R} = a_1 T^{-2} + a_2 T^{-1} + a_3 + a_4 T + a_5 T^2 + a_6 T^3 + a_7 T^4$$
 
-$$\\frac{H^\\circ(T)}{RT} = -a_1 T^{-2} + a_2 \\frac{\\ln T}{T} + a_3 + a_4 \\frac{T}{2} + a_5 \\frac{T^2}{3} + a_6 \\frac{T^3}{4} + a_7 \\frac{T^4}{5} + \\frac{b_1}{T}$$
+$$\frac{H^\circ(T)}{RT} = -a_1 T^{-2} + a_2 \frac{\ln T}{T} + a_3 + a_4 \frac{T}{2} + a_5 \frac{T^2}{3} + a_6 \frac{T^3}{4} + a_7 \frac{T^4}{5} + \frac{b_1}{T}$$
 
-$$\\frac{S^\\circ(T)}{R} = -\\frac{a_1}{2} T^{-2} - a_2 T^{-1} + a_3 \\ln T + a_4 T + a_5 \\frac{T^2}{2} + a_6 \\frac{T^3}{3} + a_7 \\frac{T^4}{4} + b_2$$
+$$\frac{S^\circ(T)}{R} = -\frac{a_1}{2} T^{-2} - a_2 T^{-1} + a_3 \ln T + a_4 T + a_5 \frac{T^2}{2} + a_6 \frac{T^3}{3} + a_7 \frac{T^4}{4} + b_2$$
 
 All results are returned in SI units: Cp, S° → J/(mol·K), H° → J/mol.
 
