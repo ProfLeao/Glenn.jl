@@ -71,6 +71,19 @@ function Base.close(tdb::ThermoDB)
     end
 end
 
+"""
+    show(io::IO, tdb::ThermoDB)
+
+Display a clean representation without exposing the local file path.
+"""
+function Base.show(io::IO, tdb::ThermoDB)
+    print(io, "ThermoDB(\"thermo.db\")")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", tdb::ThermoDB)
+    print(io, "ThermoDB(\"thermo.db\")")
+end
+
 # ------------------------------------------------------------------
 # Statistics
 # ------------------------------------------------------------------
@@ -121,14 +134,15 @@ Returns up to 20 matches.
 """
 function find_species(tdb::ThermoDB, name::AbstractString)
     pattern = "%$name%"
+    # Prioritize exact name matches first, then partial matches
     result = SQLite.DBInterface.execute(tdb.db, """
         SELECT id, name, formula, phase, molecular_weight,
                heat_of_formation_298K, num_intervals, comments
         FROM species
         WHERE name LIKE ? OR formula LIKE ?
-        ORDER BY name
+        ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, name
         LIMIT 20
-    """, (pattern, pattern))
+    """, (pattern, pattern, name))
     return [Dict{String, Any}(String(k) => v for (k, v) in pairs(r)) for r in result]
 end
 
