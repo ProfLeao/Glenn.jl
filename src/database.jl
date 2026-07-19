@@ -19,6 +19,67 @@ Universal Gas Constant in J/(mol·K). Source: CODATA 2018.
 const R_UNIVERSAL = 8.314462618
 
 # ------------------------------------------------------------------
+# Typed data structures
+# ------------------------------------------------------------------
+
+"""
+    NASACoefficients
+
+Immutable struct holding the 9 NASA-7 polynomial coefficients (a₁–a₇, b₁, b₂).
+All fields are `Float64` — use `0.0` for missing coefficients.
+"""
+struct NASACoefficients
+    a1::Float64; a2::Float64; a3::Float64; a4::Float64
+    a5::Float64; a6::Float64; a7::Float64
+    b1::Float64; b2::Float64
+end
+
+"""
+    NASACoefficients(coeffs::Dict) -> NASACoefficients
+
+Construct from a dictionary (backward compatibility).
+Missing keys default to `0.0`.
+"""
+function NASACoefficients(coeffs::Dict)
+    return NASACoefficients(
+        Float64(get(coeffs, "a1", 0.0)), Float64(get(coeffs, "a2", 0.0)),
+        Float64(get(coeffs, "a3", 0.0)), Float64(get(coeffs, "a4", 0.0)),
+        Float64(get(coeffs, "a5", 0.0)), Float64(get(coeffs, "a6", 0.0)),
+        Float64(get(coeffs, "a7", 0.0)),
+        Float64(get(coeffs, "b1", 0.0)), Float64(get(coeffs, "b2", 0.0)),
+    )
+end
+
+"""
+    SpeciesInfo
+
+Lightweight immutable struct with basic species metadata.
+"""
+struct SpeciesInfo
+    id::Int
+    name::String
+    formula::Union{String, Nothing}
+    phase::String
+    molecular_weight::Union{Float64, Nothing}
+    heat_of_formation_298K::Union{Float64, Nothing}
+    num_intervals::Int
+end
+
+"""
+    IntervalData
+
+Combines a temperature interval with its NASA-7 coefficients.
+"""
+struct IntervalData
+    interval_id::Int
+    interval_number::Int
+    temp_min::Float64
+    temp_max::Float64
+    h_298_to_0::Union{Float64, Nothing}
+    coefficients::NASACoefficients
+end
+
+# ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 
@@ -26,9 +87,12 @@ const R_UNIVERSAL = 8.314462618
     _or_zero(x) -> Float64
 
 Return `x` if not `nothing`, otherwise return 0.0.
+Type-stable: dispatches on concrete types.
 """
 _or_zero(x::Nothing) = 0.0
-_or_zero(x) = Float64(x)
+_or_zero(x::Float64) = x
+_or_zero(x::Real) = Float64(x)
+_or_zero(x::Any) = 0.0  # fallback for safety
 
 # ------------------------------------------------------------------
 # Database connection & queries
@@ -123,11 +187,58 @@ function get_statistics(tdb::ThermoDB)
 end
 
 # ------------------------------------------------------------------
+# Row → struct helpers
+# ------------------------------------------------------------------
+
+"""
+    _row_to_speciesinfo(row) -> SpeciesInfo
+
+Convert a SQLite result row to a `SpeciesInfo` struct.
+Missing fields default to `nothing`.
+"""
+function _row_to_speciesinfo(row)
+    d = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+    return SpeciesInfo(
+        d["id"],
+        d["name"],
+        get(d, "formula", nothing),
+        d["phase"],
+        get(d, "molecular_weight", nothing),
+        get(d, "heat_of_formation_298K", nothing),
+        get(d, "num_intervals", 0),
+    )
+end
+
+"""
+    _row_to_intervaldata(row) -> IntervalData
+
+Convert a SQLite result row (interval JOIN coefficients) to an `IntervalData` struct.
+"""
+function _row_to_intervaldata(row)
+    d = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+    coeffs = NASACoefficients(
+        Float64(get(d, "a1", 0.0)), Float64(get(d, "a2", 0.0)),
+        Float64(get(d, "a3", 0.0)), Float64(get(d, "a4", 0.0)),
+        Float64(get(d, "a5", 0.0)), Float64(get(d, "a6", 0.0)),
+        Float64(get(d, "a7", 0.0)),
+        Float64(get(d, "b1", 0.0)), Float64(get(d, "b2", 0.0)),
+    )
+    return IntervalData(
+        d["id"],
+        get(d, "interval_number", 0),
+        d["temp_min"],
+        d["temp_max"],
+        get(d, "h_298_to_0", nothing),
+        coeffs,
+    )
+end
+
+# ------------------------------------------------------------------
 # Species lookup
 # ------------------------------------------------------------------
 
 """
-    find_species(tdb::ThermoDB, name::AbstractString) -> Vector{Dict}
+    find_species(tdb::ThermoDB, name::AbstractString) -> Vector{SpeciesInfo}
 
 Find species by name or formula (supports partial/substring search).
 Returns up to 20 matches.
@@ -143,11 +254,11 @@ function find_species(tdb::ThermoDB, name::AbstractString)
         ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, name
         LIMIT 20
     """, (pattern, pattern, name))
-    return [Dict{String, Any}(String(k) => v for (k, v) in pairs(r)) for r in result]
+    return [_row_to_speciesinfo(r) for r in result]
 end
 
 """
-    list_species_page(tdb::ThermoDB; page=1, page_size=20) -> (Vector{Dict}, Int)
+    list_species_page(tdb::ThermoDB; page=1, page_size=20) -> (Vector{SpeciesInfo}, Int)
 
 List species with pagination. Returns a tuple `(species_list, total_pages)`.
 """
@@ -166,13 +277,13 @@ function list_species_page(tdb::ThermoDB; page::Int=1, page_size::Int=20)
     """, (page_size, offset))
 
     cols = String.(result.names)
-    species = [Dict{String, Any}(String(k) => v for (k, v) in pairs(r)) for r in result]
+    species = [_row_to_speciesinfo(r) for r in result]
     total_pages = ceil(Int, total / page_size)
     return species, total_pages
 end
 
 """
-    list_all_species(tdb::ThermoDB) -> Vector{Dict}
+    list_all_species(tdb::ThermoDB) -> Vector{SpeciesInfo}
 
 Return all species in a single query (no pagination).
 Faster than paginating when you need the full list.
@@ -184,7 +295,7 @@ function list_all_species(tdb::ThermoDB)
         FROM species
         ORDER BY name
     """)
-    return [Dict{String, Any}(String(k) => v for (k, v) in pairs(r)) for r in result]
+    return [_row_to_speciesinfo(r) for r in result]
 end
 
 """
@@ -223,18 +334,14 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
         ORDER BY ti.interval_number
     """, (species_id,))
 
-    intervals = []
-    for r in int_result
-        d = Dict{String, Any}(String(k) => v for (k, v) in pairs(r))
-        push!(intervals, d)
-    end
+    intervals = [_row_to_intervaldata(r) for r in int_result]
     data["intervals"] = intervals
 
     return data
 end
 
 """
-    get_species_info(tdb::ThermoDB, species_id::Int) -> Union{Dict, Nothing}
+    get_species_info(tdb::ThermoDB, species_id::Int) -> Union{SpeciesInfo, Nothing}
 
 Lightweight lookup: returns basic species metadata (id, name, formula,
 phase, molecular_weight, heat_of_formation_298K) without loading
@@ -251,16 +358,17 @@ function get_species_info(tdb::ThermoDB, species_id::Int)
     """, (species_id,))
 
     for row in result
-        return Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+        return _row_to_speciesinfo(row)
     end
     return nothing
 end
 
 """
     get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature::Float64)
+       -> Union{IntervalData, Nothing}
 
 Find the temperature interval and coefficients valid for the given temperature.
-Returns a Dict with interval data and coefficients, or `nothing` if out of range.
+Returns an `IntervalData` struct, or `nothing` if out of range.
 """
 function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature::Float64)
     result = SQLite.DBInterface.execute(tdb.db, """
@@ -278,7 +386,7 @@ function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature
 
     # Get first row (avoid collect which returns missing)
     for row in result
-        return Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+        return _row_to_intervaldata(row)
     end
     return nothing
 end
@@ -288,69 +396,59 @@ end
 # ------------------------------------------------------------------
 
 """
-    calculate_cp(coeffs::Dict, T::Float64) -> Float64
+    calculate_cp(coeffs::NASACoefficients, T::Float64) -> Float64
 
 Calculate Cp(T)/R using NASA-7 polynomial coefficients.
 
 Equation: a1·T⁻² + a2·T⁻¹ + a3 + a4·T + a5·T² + a6·T³ + a7·T⁴
 """
-function calculate_cp(coeffs::Dict, T::Float64)
-    a1 = _or_zero(get(coeffs, "a1", nothing))
-    a2 = _or_zero(get(coeffs, "a2", nothing))
-    a3 = _or_zero(get(coeffs, "a3", nothing))
-    a4 = _or_zero(get(coeffs, "a4", nothing))
-    a5 = _or_zero(get(coeffs, "a5", nothing))
-    a6 = _or_zero(get(coeffs, "a6", nothing))
-    a7 = _or_zero(get(coeffs, "a7", nothing))
+function calculate_cp(coeffs::NASACoefficients, T::Float64)
+    return coeffs.a1 / T^2 + coeffs.a2 / T + coeffs.a3 +
+           coeffs.a4 * T + coeffs.a5 * T^2 +
+           coeffs.a6 * T^3 + coeffs.a7 * T^4
+end
 
-    return a1 / T^2 + a2 / T + a3 + a4 * T +
-           a5 * T^2 + a6 * T^3 + a7 * T^4
+# Backward-compatible Dict method (converts to NASACoefficients)
+function calculate_cp(coeffs::Dict, T::Float64)
+    return calculate_cp(NASACoefficients(coeffs), T)
 end
 
 """
-    calculate_h(coeffs::Dict, T::Float64) -> Float64
+    calculate_h(coeffs::NASACoefficients, T::Float64) -> Float64
 
 Calculate H°(T)/RT using NASA-7 polynomial coefficients.
 
 Equation: -a1·T⁻² + a2·ln(T)/T + a3 + a4·T/2 + a5·T²/3
           + a6·T³/4 + a7·T⁴/5 + b1/T
 """
-function calculate_h(coeffs::Dict, T::Float64)
-    a1 = _or_zero(get(coeffs, "a1", nothing))
-    a2 = _or_zero(get(coeffs, "a2", nothing))
-    a3 = _or_zero(get(coeffs, "a3", nothing))
-    a4 = _or_zero(get(coeffs, "a4", nothing))
-    a5 = _or_zero(get(coeffs, "a5", nothing))
-    a6 = _or_zero(get(coeffs, "a6", nothing))
-    a7 = _or_zero(get(coeffs, "a7", nothing))
-    b1 = _or_zero(get(coeffs, "b1", nothing))
+function calculate_h(coeffs::NASACoefficients, T::Float64)
+    return -coeffs.a1 / T^2 + coeffs.a2 * log(T) / T + coeffs.a3 +
+           coeffs.a4 * T / 2 + coeffs.a5 * T^2 / 3 +
+           coeffs.a6 * T^3 / 4 + coeffs.a7 * T^4 / 5 + coeffs.b1 / T
+end
 
-    return -a1 / T^2 + a2 * log(T) / T + a3 +
-           a4 * T / 2 + a5 * T^2 / 3 +
-           a6 * T^3 / 4 + a7 * T^4 / 5 + b1 / T
+# Backward-compatible Dict method (converts to NASACoefficients)
+function calculate_h(coeffs::Dict, T::Float64)
+    return calculate_h(NASACoefficients(coeffs), T)
 end
 
 """
-    calculate_s(coeffs::Dict, T::Float64) -> Float64
+    calculate_s(coeffs::NASACoefficients, T::Float64) -> Float64
 
 Calculate S°(T)/R using NASA-7 polynomial coefficients.
 
 Equation: -a1·T⁻²/2 - a2·T⁻¹ + a3·ln(T) + a4·T + a5·T²/2
           + a6·T³/3 + a7·T⁴/4 + b2
 """
-function calculate_s(coeffs::Dict, T::Float64)
-    a1 = _or_zero(get(coeffs, "a1", nothing))
-    a2 = _or_zero(get(coeffs, "a2", nothing))
-    a3 = _or_zero(get(coeffs, "a3", nothing))
-    a4 = _or_zero(get(coeffs, "a4", nothing))
-    a5 = _or_zero(get(coeffs, "a5", nothing))
-    a6 = _or_zero(get(coeffs, "a6", nothing))
-    a7 = _or_zero(get(coeffs, "a7", nothing))
-    b2 = _or_zero(get(coeffs, "b2", nothing))
+function calculate_s(coeffs::NASACoefficients, T::Float64)
+    return -coeffs.a1 / (2 * T^2) - coeffs.a2 / T + coeffs.a3 * log(T) +
+           coeffs.a4 * T + coeffs.a5 * T^2 / 2 +
+           coeffs.a6 * T^3 / 3 + coeffs.a7 * T^4 / 4 + coeffs.b2
+end
 
-    return -a1 / (2 * T^2) - a2 / T + a3 * log(T) +
-           a4 * T + a5 * T^2 / 2 +
-           a6 * T^3 / 3 + a7 * T^4 / 4 + b2
+# Backward-compatible Dict method (converts to NASACoefficients)
+function calculate_s(coeffs::Dict, T::Float64)
+    return calculate_s(NASACoefficients(coeffs), T)
 end
 
 end # module ThermoDatabase

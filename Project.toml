@@ -4,8 +4,6 @@ authors = ["Reginaldo Leão"]
 version = "0.1.0"
 
 [deps]
-Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 
 [compat]
@@ -13,8 +11,7 @@ SQLite = "1"
 julia = "1.6"
 
 [extras]
-SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["SQLite", "Test"]
+test = ["Test"]

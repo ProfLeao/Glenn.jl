@@ -357,25 +357,31 @@ function parse_and_load(builder::ThermoDBBuilder)
         return
     end
 
-    # --- Global metadata (line index 2, 1-based) ---
-    if length(lines) >= 2
-        metadata_line = lines[2]
-        parts = split(metadata_line)
-        if length(parts) >= 4
-            SQLite.execute(conn, """
-                INSERT OR REPLACE INTO file_metadata
-                    (id, temp_min_global, temp_500_K, temp_1500_K,
-                     temp_max_global, reference_date)
-                VALUES (1, ?, ?, ?, ?, ?)
-            """, (
-                parse_float(parts[1]),
-                parse_float(parts[2]),
-                parse_float(parts[3]),
-                parse_float(parts[4]),
-                length(parts) > 4 ? parts[5] : nothing,
-            ))
+    # Wrap all inserts in a transaction for massive performance gain
+    SQLite.execute(conn, "BEGIN")
+    species_count = 0
+    skipped = 0
+
+    try
+        # --- Global metadata (line index 2, 1-based) ---
+        if length(lines) >= 2
+            metadata_line = lines[2]
+            parts = split(metadata_line)
+            if length(parts) >= 4
+                SQLite.execute(conn, """
+                    INSERT OR REPLACE INTO file_metadata
+                        (id, temp_min_global, temp_500_K, temp_1500_K,
+                         temp_max_global, reference_date)
+                    VALUES (1, ?, ?, ?, ?, ?)
+                """, (
+                    parse_float(parts[1]),
+                    parse_float(parts[2]),
+                    parse_float(parts[3]),
+                    parse_float(parts[4]),
+                    length(parts) > 4 ? parts[5] : nothing,
+                ))
+            end
         end
-    end
 
     # --- Species loop ---
     i = 3  # 1-based index (skip THERMO header + metadata)
@@ -539,10 +545,19 @@ function parse_and_load(builder::ThermoDBBuilder)
         "UPDATE file_metadata SET total_species = ? WHERE id = 1",
         (species_count,))
 
+    # Commit the transaction
+    SQLite.execute(conn, "COMMIT")
+
     @info repeat("=", 70)
     @info "Total species loaded: $species_count"
     @info "Skipped lines: $skipped"
     @info "Database: $(builder.db_file)"
+
+    catch e
+        SQLite.execute(conn, "ROLLBACK")
+        @error "Build failed, rolling back: $e"
+        rethrow(e)
+    end
 end
 
 end # module ThermoBuilder

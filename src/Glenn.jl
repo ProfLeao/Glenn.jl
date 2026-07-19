@@ -17,13 +17,13 @@ calc = Calculator()
 
 # Find the exact species (filter by name)
 species = get_available_species(calc, "O2")
-o2 = only(s for s in species if s["name"] == "O2")
+o2 = only(s for s in species if s.name == "O2")
 
 # Calculate Cp, H°, S° at 1000 K
-props = calculate_properties(calc, o2["id"], 1000.0)
-println("Cp = ", round(props["cp"], digits=2), " J/(mol·K)")
-println("H° = ", round(props["h_relative"], digits=1), " J/mol")
-println("S° = ", round(props["s"], digits=3), " J/(mol·K)")
+props = calculate_properties(calc, o2.id, 1000.0)
+println("Cp = ", round(props.cp, digits=2), " J/(mol·K)")
+println("H° = ", round(props.h_relative, digits=1), " J/mol")
+println("S° = ", round(props.s, digits=3), " J/(mol·K)")
 
 close(calc)
 ```
@@ -36,8 +36,8 @@ using Glenn
 # Automatic connect/close with do-block
 Calculator() do calc
     species = get_available_species(calc, "CH4")
-    props = calculate_properties(calc, species[1]["id"], 500.0)
-    println("Cp = ", round(props["cp"], digits=2), " J/(mol·K)")
+    props = calculate_properties(calc, species[1].id, 500.0)
+    println("Cp = ", round(props.cp, digits=2), " J/(mol·K)")
 end
 ```
 """
@@ -135,6 +135,10 @@ const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
 const Calculator = ThermoCalculator.Calculator
 const ThermoDB = ThermoDatabase.ThermoDB
 const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder
+const ThermoProperties = ThermoCalculator.ThermoProperties
+const SpeciesInfo = ThermoDatabase.SpeciesInfo
+const NASACoefficients = ThermoDatabase.NASACoefficients
+const IntervalData = ThermoDatabase.IntervalData
 
 # Database functions
 using .ThermoDatabase: find_species, list_species_page, list_all_species,
@@ -190,6 +194,7 @@ export __version__, __author__
 
 # Types
 export Calculator, ThermoDB, ThermoDBBuilder
+export ThermoProperties, SpeciesInfo, NASACoefficients, IntervalData
 export R_UNIVERSAL
 export default_db_path, default_inp_path
 
@@ -206,12 +211,6 @@ export find_species, list_species_page, list_all_species,
 export get_available_species, calculate_properties,
        calculate_formation_enthalpy, calculate_enthalpy_change,
        get_properties_range
-
-# Builder functions
-export parse_float, parse_species_record,
-       parse_general_info_record, parse_temp_interval_record,
-       parse_coefficients_record, is_temperature_line, is_coefficient_line,
-       read_thermo_file, connect, create_tables, parse_and_load
 
 # CLI
 export cli_main

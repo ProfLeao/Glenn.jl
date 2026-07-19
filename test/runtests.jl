@@ -187,6 +187,10 @@ end
         @test isdefined(Glenn, :Calculator)
         @test isdefined(Glenn, :ThermoDB)
         @test isdefined(Glenn, :ThermoDBBuilder)
+        @test isdefined(Glenn, :ThermoProperties)
+        @test isdefined(Glenn, :SpeciesInfo)
+        @test isdefined(Glenn, :NASACoefficients)
+        @test isdefined(Glenn, :IntervalData)
         @test isdefined(Glenn, :R_UNIVERSAL)
         @test isdefined(Glenn, :calculate_properties)
         @test isdefined(Glenn, :calculate_cp)
@@ -194,8 +198,6 @@ end
         @test isdefined(Glenn, :calculate_s)
         @test isdefined(Glenn, :find_species)
         @test isdefined(Glenn, :get_statistics)
-        @test isdefined(Glenn, :parse_float)
-        @test isdefined(Glenn, :is_coefficient_line)
         @test isdefined(Glenn, :cli_main)
         @test isdefined(Glenn, :default_inp_path)
     end
@@ -257,9 +259,9 @@ end
     @testset "ThermoDB - Find species" begin
         results = Glenn.find_species(tdb, "O2")
         @test length(results) == 1
-        @test results[1]["name"] == "O2"
-        @test results[1]["phase"] == "gas"
-        @test results[1]["molecular_weight"] ≈ 31.9988
+        @test results[1].name == "O2"
+        @test results[1].phase == "gas"
+        @test results[1].molecular_weight ≈ 31.9988
 
         # Nonexistent species
         results = Glenn.find_species(tdb, "XYZ123")
@@ -271,8 +273,8 @@ end
         @test data !== nothing
         @test data["name"] == "O2"
         @test length(data["intervals"]) == 2
-        @test data["intervals"][1]["temp_min"] == 200.0
-        @test data["intervals"][1]["temp_max"] == 1000.0
+        @test data["intervals"][1].temp_min == 200.0
+        @test data["intervals"][1].temp_max == 1000.0
 
         # Nonexistent species
         @test Glenn.get_species_data(tdb, 99999) === nothing
@@ -281,21 +283,21 @@ end
     @testset "ThermoDB - Species for temperature" begin
         interval = Glenn.get_species_for_temperature(tdb, 1, 300.0)
         @test interval !== nothing
-        @test interval["temp_min"] <= 300.0 <= interval["temp_max"]
+        @test interval.temp_min <= 300.0 <= interval.temp_max
 
         interval = Glenn.get_species_for_temperature(tdb, 1, 100.0)
         @test interval === nothing
 
         interval = Glenn.get_species_for_temperature(tdb, 1, 5000.0)
         @test interval !== nothing
-        @test interval["temp_min"] <= 5000.0 <= interval["temp_max"]
+        @test interval.temp_min <= 5000.0 <= interval.temp_max
     end
 
     @testset "ThermoDB - Pagination" begin
         species, total_pages = Glenn.list_species_page(tdb, page=1, page_size=10)
         @test length(species) == 1
         @test total_pages == 1
-        @test species[1]["name"] == "O2"
+        @test species[1].name == "O2"
 
         # Page beyond available data
         species, total_pages = Glenn.list_species_page(tdb, page=2, page_size=10)
@@ -306,15 +308,15 @@ end
     @testset "ThermoDB - List all species" begin
         all_species = Glenn.list_all_species(tdb)
         @test length(all_species) == 1
-        @test all_species[1]["name"] == "O2"
+        @test all_species[1].name == "O2"
     end
 
     @testset "ThermoDB - Get species info (lightweight)" begin
         info = Glenn.get_species_info(tdb, 1)
         @test info !== nothing
-        @test info["name"] == "O2"
-        @test info["phase"] == "gas"
-        @test info["molecular_weight"] ≈ 31.9988
+        @test info.name == "O2"
+        @test info.phase == "gas"
+        @test info.molecular_weight ≈ 31.9988
 
         @test Glenn.get_species_info(tdb, 99999) === nothing
     end
@@ -336,23 +338,24 @@ end
             "b1" => -3.39145487e+03,
             "b2" => 1.84969947e+01,
         )
+        ncoeffs = Glenn.NASACoefficients(coeffs)  # typed version
 
         @testset "Cp/R at 298.15K" begin
-            cp_r = Glenn.calculate_cp(coeffs, 298.15)
+            cp_r = Glenn.calculate_cp(ncoeffs, 298.15)
             @test cp_r ≈ 3.53 atol=0.1
             @test isfinite(cp_r)
             @test cp_r > 0
         end
 
         @testset "Cp/R at 1000K" begin
-            cp_r = Glenn.calculate_cp(coeffs, 1000.0)
+            cp_r = Glenn.calculate_cp(ncoeffs, 1000.0)
             @test 3.5 < cp_r < 5.0
         end
 
         @testset "H/RT and S/R are finite and positive entropy" begin
             for T in [300.0, 500.0, 800.0, 1000.0]
-                h_rt = Glenn.calculate_h(coeffs, T)
-                s_r  = Glenn.calculate_s(coeffs, T)
+                h_rt = Glenn.calculate_h(ncoeffs, T)
+                s_r  = Glenn.calculate_s(ncoeffs, T)
                 @test isfinite(h_rt)
                 @test isfinite(s_r)
                 @test s_r > 0
@@ -360,12 +363,12 @@ end
         end
 
         @testset "Standalone H/RT calculation" begin
-            h_rt = Glenn.calculate_h(coeffs, 298.15)
+            h_rt = Glenn.calculate_h(ncoeffs, 298.15)
             @test isfinite(h_rt)
         end
 
         @testset "Standalone S/R calculation" begin
-            s_r = Glenn.calculate_s(coeffs, 298.15)
+            s_r = Glenn.calculate_s(ncoeffs, 298.15)
             @test isfinite(s_r)
             @test s_r > 0
         end
@@ -380,10 +383,10 @@ end
             # Verify: d(H/RT)/dT = (Cp/R - H/RT) / T
             T = 500.0
             eps = 1e-4
-            cp_r = Glenn.calculate_cp(coeffs, T)
-            h_rt = Glenn.calculate_h(coeffs, T)
-            h_rt_plus = Glenn.calculate_h(coeffs, T + eps)
-            h_rt_minus = Glenn.calculate_h(coeffs, T - eps)
+            cp_r = Glenn.calculate_cp(ncoeffs, T)
+            h_rt = Glenn.calculate_h(ncoeffs, T)
+            h_rt_plus = Glenn.calculate_h(ncoeffs, T + eps)
+            h_rt_minus = Glenn.calculate_h(ncoeffs, T - eps)
             dhrt_dt = (h_rt_plus - h_rt_minus) / (2 * eps)
             expected = (cp_r - h_rt) / T
             @test isapprox(dhrt_dt, expected, rtol=1e-5)
@@ -399,7 +402,7 @@ end
         @testset "Available species" begin
             species = Glenn.get_available_species(calc, "O2")
             @test length(species) == 1
-            @test species[1]["name"] == "O2"
+            @test species[1].name == "O2"
 
             # All species (no filter)
             all_species = Glenn.get_available_species(calc)
@@ -408,51 +411,44 @@ end
 
         @testset "Properties at 298.15K" begin
             props = Glenn.calculate_properties(calc, 1, 298.15)
-            @test props !== nothing
-            @test props["species_name"] == "O2"
-            @test props["phase"] == "gas"
-            @test props["cp"] ≈ 29.4 atol=1.0
-            @test 150.0 < props["s"] < 250.0
-            @test props["temp_min"] == 200.0
-            @test props["temp_max"] == 1000.0
-            @test isfinite(props["cp"])
-            @test isfinite(props["h_relative"])
-            @test isfinite(props["s"])
+            @test props.species_name == "O2"
+            @test props.phase == "gas"
+            @test props.cp ≈ 29.4 atol=1.0
+            @test 150.0 < props.s < 250.0
+            @test props.temp_min == 200.0
+            @test props.temp_max == 1000.0
+            @test isfinite(props.cp)
+            @test isfinite(props.h_relative)
+            @test isfinite(props.s)
         end
 
         @testset "Properties at 500K" begin
             props = Glenn.calculate_properties(calc, 1, 500.0)
-            @test props !== nothing
-            @test props["cp"] > 0
-            @test isfinite(props["cp"])
+            @test props.cp > 0
+            @test isfinite(props.cp)
 
             # H should increase with T
             props_298 = Glenn.calculate_properties(calc, 1, 298.15)
-            @test props_298 !== nothing
-            @test props["h_relative"] > props_298["h_relative"]
+            @test props.h_relative > props_298.h_relative
         end
 
         @testset "Properties at 1000K" begin
             props = Glenn.calculate_properties(calc, 1, 1000.0)
-            @test props !== nothing
-            @test props["cp"] > 20.0
-            @test props["h_relative"] > 0.0
-            @test props["s"] > 0.0
+            @test props.cp > 20.0
+            @test props.h_relative > 0.0
+            @test props.s > 0.0
         end
 
         @testset "Properties out of range" begin
             # Below valid range
-            props = Glenn.calculate_properties(calc, 1, 100.0)
-            @test props === nothing
+            @test_throws Glenn.ThermoCalcError Glenn.calculate_properties(calc, 1, 100.0)
 
             # Above valid range
-            props = Glenn.calculate_properties(calc, 1, 10000.0)
-            @test props === nothing
+            @test_throws Glenn.ThermoCalcError Glenn.calculate_properties(calc, 1, 10000.0)
         end
 
         @testset "Invalid species ID" begin
-            props = Glenn.calculate_properties(calc, 99999, 300.0)
-            @test props === nothing
+            @test_throws Glenn.ThermoCalcError Glenn.calculate_properties(calc, 99999, 300.0)
         end
 
         @testset "Formation enthalpy" begin
@@ -460,28 +456,26 @@ end
             @test h_f ≈ 0.0 atol=1.0
 
             # Nonexistent species
-            @test Glenn.calculate_formation_enthalpy(calc, 99999) === nothing
+            @test_throws Glenn.ThermoCalcError Glenn.calculate_formation_enthalpy(calc, 99999)
         end
 
         @testset "Enthalpy change" begin
             delta_h = Glenn.calculate_enthalpy_change(calc, 1, 298.15, 500.0)
-            @test delta_h !== nothing
             @test delta_h > 0.0
             @test delta_h < 1e6  # Reasonable for ~200K ΔT
 
             # Zero delta (same temperature)
             delta_h_zero = Glenn.calculate_enthalpy_change(calc, 1, 400.0, 400.0)
-            @test delta_h_zero !== nothing
             @test isapprox(delta_h_zero, 0.0, atol=1e-6)
         end
 
-        @testset "Properties range" begin
+        @testset "Properties range (vectorized)" begin
             results = Glenn.get_properties_range(calc, 1, [298.15, 500.0, 800.0])
             @test length(results) == 3
-            @test all(r -> r["cp"] > 0, results)
+            @test all(r -> r.cp > 0, results)
 
             # Cp should increase with temperature
-            @test results[2]["cp"] > results[1]["cp"]
+            @test results[2].cp > results[1].cp
         end
 
         Glenn.close(calc)
@@ -497,7 +491,7 @@ end
             connected_in_block = true
             species = Glenn.get_available_species(calc, "O2")
             @test length(species) == 1
-            @test species[1]["name"] == "O2"
+            @test species[1].name == "O2"
         end
 
         @test connected_in_block
@@ -508,49 +502,49 @@ end
     # ==================================================================
     @testset "Builder - Parse utilities" begin
         @testset "parse_float - normal" begin
-            @test Glenn.parse_float("3.14159") ≈ 3.14159
+            @test Glenn.ThermoBuilder.parse_float("3.14159") ≈ 3.14159
         end
 
         @testset "parse_float - FORTRAN D notation" begin
-            @test Glenn.parse_float("1.234D+02") ≈ 123.4
-            @test Glenn.parse_float("5.678D-01") ≈ 0.5678
-            @test Glenn.parse_float("1.0d+00") ≈ 1.0
+            @test Glenn.ThermoBuilder.parse_float("1.234D+02") ≈ 123.4
+            @test Glenn.ThermoBuilder.parse_float("5.678D-01") ≈ 0.5678
+            @test Glenn.ThermoBuilder.parse_float("1.0d+00") ≈ 1.0
         end
 
         @testset "parse_float - empty/invalid" begin
-            @test Glenn.parse_float("") === nothing
-            @test Glenn.parse_float("   ") === nothing
+            @test Glenn.ThermoBuilder.parse_float("") === nothing
+            @test Glenn.ThermoBuilder.parse_float("   ") === nothing
         end
 
         @testset "is_coefficient_line" begin
-            @test Glenn.is_coefficient_line(" 1.234D+05 5.678D-02")
-            @test Glenn.is_coefficient_line(" 1.0D0 2.0D+01")
-            @test !Glenn.is_coefficient_line("O2")
-            @test !Glenn.is_coefficient_line("200.000  1000.000")
+            @test Glenn.ThermoBuilder.is_coefficient_line(" 1.234D+05 5.678D-02")
+            @test Glenn.ThermoBuilder.is_coefficient_line(" 1.0D0 2.0D+01")
+            @test !Glenn.ThermoBuilder.is_coefficient_line("O2")
+            @test !Glenn.ThermoBuilder.is_coefficient_line("200.000  1000.000")
         end
 
         @testset "is_temperature_line" begin
-            @test Glenn.is_temperature_line(" 2.0000E+02 1.0000E+03")
-            @test !Glenn.is_temperature_line(" 1.0000E+03 2.0000E+02")  # T1 > T2
-            @test !Glenn.is_temperature_line("short")
-            @test !Glenn.is_temperature_line(" 5.0000E+02 5.0000E+02")  # equal
+            @test Glenn.ThermoBuilder.is_temperature_line(" 2.0000E+02 1.0000E+03")
+            @test !Glenn.ThermoBuilder.is_temperature_line(" 1.0000E+03 2.0000E+02")  # T1 > T2
+            @test !Glenn.ThermoBuilder.is_temperature_line("short")
+            @test !Glenn.ThermoBuilder.is_temperature_line(" 5.0000E+02 5.0000E+02")  # equal
         end
 
         @testset "parse_species_record" begin
-            name, comments = Glenn.parse_species_record("O2              Ref-1 O2 gas           ")
+            name, comments = Glenn.ThermoBuilder.parse_species_record("O2              Ref-1 O2 gas           ")
             @test name == "O2"
             @test occursin("O2", comments)
         end
 
         @testset "parse_general_info_record" begin
-            info = Glenn.parse_general_info_record(
+            info = Glenn.ThermoBuilder.parse_general_info_record(
                 " 1  g 2/99O   2   1   2    0    00G200.000 3500.000 1000.000    1")
             @test info["num_intervals"] == 1
             @test info["phase"] == "gas"
         end
 
         @testset "parse_temp_interval_record" begin
-            data = Glenn.parse_temp_interval_record(
+            data = Glenn.ThermoBuilder.parse_temp_interval_record(
                 " 2.0000E+02 1.0000E+03 0.0000E+00 0.0000E+00 0.0000E+00 0" *
                 "               0.0000E+00 0.0000E+00 8.6800E+03")
             @test data["temp_min"] ≈ 200.0
@@ -565,7 +559,7 @@ end
             fields5 = lpad.(["-1.00524900E+03", "6.03473800E+00", "0.00000000E+00",
                              "3.69757819E+00", "6.13519689E-01"], 16)
             line5 = join(fields5)
-            coeffs = Glenn.parse_coefficients_record([line4, line5])
+            coeffs = Glenn.ThermoBuilder.parse_coefficients_record([line4, line5])
             @test coeffs["a1"] ≈ 3.21225000 rtol=1e-6
             @test coeffs["a2"] ≈ 1.12749000e-03 rtol=1e-6
             @test coeffs["a3"] ≈ -5.75615000e-07 rtol=1e-6
@@ -613,10 +607,10 @@ end
             write(inp_path, inp_content)
 
             builder = Glenn.ThermoDBBuilder(inp_path, db_path)
-            Glenn.connect(builder)
-            Glenn.create_tables(builder)
-            Glenn.parse_and_load(builder)
-            Glenn.close(builder)
+            Glenn.ThermoBuilder.connect(builder)
+            Glenn.ThermoBuilder.create_tables(builder)
+            Glenn.ThermoBuilder.parse_and_load(builder)
+            Glenn.ThermoBuilder.close(builder)
 
             @test isfile(db_path)
             @test filesize(db_path) > 0

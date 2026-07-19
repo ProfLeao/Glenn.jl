@@ -1,0 +1,260 @@
+RELATÓRIO DE AVALIAÇÃO — Glenn.jl v0.1.0
+Repositório: github.com/ProfLeao/Glenn.jl
+Autor: Dr. Reginaldo G. Leão Jr.
+Data: 19 de julho de 2026
+
+1. ARQUITETURA GERAL
+
+O pacote Glenn.jl implementa o cálculo de propriedades termoquímicas (Cp(T), H°(T), S°(T)) a partir dos coeficientes polinomiais NASA-7, armazenados em um banco SQLite. A arquitetura é modular, com 4 submódulos bem definidos:
+
+  Glenn.jl (raiz)
+    +-- ThermoDatabase   : Queries SQLite e matemática NASA-7 (Cp/R, H/RT, S/R)
+    +-- ThermoCalculator : API de alto nível (Calculator, get_available_species,
+    |                       calculate_properties, formation_enthalpy, enthalpy_change)
+    +-- ThermoBuilder    : Parser de formato FORTRAN (thermo.inp) para SQLite
+    +-- CLI              : Interface de linha de comando (build e query)
+
+PONTOS FORTES DA ARQUITETURA:
+  * Separacão de responsabilidades: cada submódulo tem um papel claro e distinto
+  * Hierarquia de exceções: ThermoCalcError, DatabaseNotConnectedError,
+    SpeciesNotFoundError, TemperatureOutOfRangeError — todas subclasse de Exception
+  * Context manager (do-block): Calculator() do calc ... end com try/finally
+    para fechamento automático da conexão
+  * Constante física R_UNIVERSAL = 8.314462618 (CODATA 2018), correta e documentada
+  * CI/CD: GitHub Actions em Julia 1.6, 1.x, nightly (Ubuntu, Windows, macOS)
+
+DADOS DO PACOTE:
+  * ~2030 espécies químicas no banco bundled
+  * ~3772 intervalos de temperatura
+  * Licença MIT
+  * 32 commits, 3 estrelas
+
+2. ANÁLISE DE PERFORMANCE E TYPE STABILITY
+
+2.1. CRÍTICO — USO SISTEMÁTICO DE Dict{String, Any}
+
+Todas as funcões públicas retornam dicionários:
+
+  function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
+      return Dict{String, Any}(
+          "cp"         => cp_r * R,
+          "h_relative" => h_rt * T * R,
+          "s"          => s_r * R,
+          ...
+      )
+  end
+
+Problema: isso anula o sistema de tipos de Julia. O compilador não consegue
+inferir tipos dos campos, cada acesso props["cp"] envolve hash lookup +
+boxing/unboxing.
+
+Recomendacão — substituir por struct imutável:
+
+  struct ThermoProperties
+      temperature::Float64
+      cp::Float64
+      h_relative::Float64
+      s::Float64
+      temp_min::Float64
+      temp_max::Float64
+      species_name::String
+      phase::String
+  end
+
+Impacto estimado: 5-10x mais rápido em loops de cálculo.
+
+2.2. MÉDIO — TYPE INSTABILITY EM _or_zero
+
+  _or_zero(x::Nothing) = 0.0
+  _or_zero(x) = Float64(x)
+
+Chamado 7 vezes por funcão polinomial — cada chamada pode forçar dynamic
+dispatch se o coeficiente não tiver tipo inferido.
+
+Solucão: receber Float64 diretamente ou usar coalesce.
+
+2.3. BAIXO — SQLITE PARAMETERIZED QUERIES
+
+O código usa corretamente placeholders "?" — bem implementado, sem risco de
+SQL injection.
+
+3. COBERTURA DE TESTES
+
+Cobertura muito boa para um pacote v0.1.0:
+
+  GRUPO DE TESTE          | O QUE VERIFICA
+  ------------------------+
+  Version/metadata        | __version__ e __author__ são strings nao vazias
+  Module exports          | 14 símbolos exportados corretamente
+  Exception types         | 3 excecoes herdam de Exception
+  Physical constants      | R_UNIVERSAL = 8.314462618 com rtol
+  Database queries        | find_species, get_species_data, paginacão,
+                          | list_all_species, get_species_info
+  NASA-7 polynomials      | Cp/R, H/RT, S/R com coeficientes reais
+  Consistência termodinâmica | Verifica d(H/RT)/dT = (Cp/R - H/RT)/T
+                          | via diferencas finitas — RIGOR CIENTIFICO NOTAVEL
+  Calculator API          | Propriedades em 298.15K, 500K, 1000K,
+                          | fora de faixa, species inválido
+  Entalpia de formacão    | Valores esperados, nothing para inexistente
+  Delta H                 | Mudanca positiva, delta zero (mesma T)
+  Context manager         | Conexão estabelecida dentro do do-block
+  Builder parsing         | parse_float (notacão D), is_coefficient_line,
+                          | is_temperature_line, todos os records
+  Build smoke test        | Cria banco de thermo.inp -> verifica em disco
+  CLI smoke tests         | Help e query sem crash
+  Edge cases              | Banco inexistente -> erro, _or_zero, paths
+
+DESTAQUE POSITIVO: Teste de consistência termodinâmica usando diferencas
+finitas para verificar a relacão d(H/RT)/dT = (Cp/R - H/RT)/T — um nível
+de rigor cientifico raro em pacotes numéricos.
+
+OPORTUNIDADES DE MELHORIA:
+  * Testes de regressão com BenchmarkTools.jl
+  * Property-based testing com JuliaCheck.jl
+  * Testes com SQLite em memória expandidos para multiespécies
+
+4. MÓDULO BUILDER — PARSER FORTRAN
+
+O parser implementa corretamente a leitura do formato FORTRAN de colunas fixas
+(Appendix C da NASA):
+
+  Record 1 (especie)         : [1:16] nome, [19:80] comentarios
+  Record 2 (info geral)      : [1:2] intervalos, [4:9] ref, [51:52] fase,
+                               [53:65] MW, [66:80] DHf
+  Record 3 (intervalo T)     : [1:11] T_min, [12:22] T_max, [66:80] H_298->0
+  Records 4-5 (coeficientes) : a1-a7, b1, b2 em notacão D
+
+PONTOS FORTES:
+  * parse_float com tryparse + regex para notacão FORTRAN D
+  * Constante _FORTRAN_D_RE compilada para regex eficiente
+  * is_temperature_line valida T1 < T2
+  * read_thermo_file stripping de comentarios "!" — fiel ao formato NASA
+
+MELHORIAS POSSIVEIS:
+  * Validacão mais robusta com warnings para registros truncados
+  * ProgressMeter.jl para carga de ~2000 especies
+  * Transacões SQLite (BEGIN/COMMIT) para batch inserts — ganho massivo
+
+5. DEPENDÊNCIAS (Project.toml)
+
+ATUAL:
+  [deps]
+  Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"   <- stdlib, desnecessario
+  Printf  = "de0858da-6303-5e67-8744-51eddeeeb8d7"   <- stdlib
+  SQLite  = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+
+  [extras]
+  SQLite  = "..."    <- REDUNDANTE com [deps]!
+  Test    = "..."
+
+PROBLEMAS:
+  1. SQLite duplicado em [deps] e [extras] — deve ficar APENAS em [deps]
+  2. Logging e Printf são stdlib desde Julia 1.0 — desnecessários em [deps]
+
+RECOMENDACAO:
+  [deps]
+  SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+
+  [extras]
+  Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+  [targets]
+  test = ["Test"]
+
+Compat mínimo: julia = "1.6" (LTS atual) — sensato.
+Compat SQLite = "1" — amplo.
+
+6. EQUAÇÕES NASA-7 — VERIFICACAO FISICA
+
+As implementacões das 3 equações principais estao CORRETAS:
+
+  Cp/R  = a1/T^2 + a2/T + a3 + a4*T + a5*T^2 + a6*T^3 + a7*T^4
+
+  H/RT  = -a1/T^2 + a2*ln(T)/T + a3 + a4*T/2 + a5*T^2/3
+          + a6*T^3/4 + a7*T^4/5 + b1/T
+
+  S/R   = -a1/(2*T^2) - a2/T + a3*ln(T) + a4*T + a5*T^2/2
+          + a6*T^3/3 + a7*T^4/4 + b2
+
+Todos os coeficientes utilizam _or_zero() para tratar missing values com
+seguranca.
+
+Conversão final para SI: cp * R, h_rt * T * R, s_r * R — correta.
+
+7. PLANO DE ACAO PRIORIZADO
+
+7.1. ALTA PRIORIDADE (correcoes e ganhos imediatos)
+
+  1. STRUCTS TIPADAS para ThermoProperties, Species, Coefficients
+     Elimina Dict{String, Any} — ganho de 5-10x em loops
+
+  2. CORRIGIR PROJECT.TOML
+     Remover SQLite de [extras], remover stdlibs de [deps]
+
+  3. TRANSACOES SQLITE NO BUILDER
+     BEGIN/COMMIT para inserts em batch (ganho enorme de performance)
+
+  4. BENCHMARK DE REGRESSAO com BenchmarkTools.jl
+     Evita degradacão silenciosa de performance
+
+7.2. MEDIA PRIORIDADE
+
+  5. calculate_properties vetorizado para arrays de T
+     Evita N queries SQL para N temperaturas
+
+  6. @simd nas funcoes polinomiais
+     Ganho de ~2-4x em CPUs com AVX
+
+  7. JuliaFormatter.jl + Aqua.jl
+     Padronizacão e qualidade de codigo
+
+  8. JET.jl para analise de type stability
+     Detecta dynamic dispatch silencioso
+
+7.3. BAIXA PRIORIDADE (cosmeticos/refinamentos)
+
+  9. Artifacts.jl para thermo.db
+     Reduz tamanho do repositorio
+
+  10. Base.getindex syntax sugar: calc[id, T]
+      API mais elegante
+
+  11. Compat com julia = "1.10" como minimo recomendado
+      Acesso a melhorias de compilador
+
+  12. Downgrade de exports para parse_* e is_* como internos
+      API publica mais limpa
+
+8. RESUMO DA QUALIDADE
+
+  DIMENSAO               | NOTA  | COMENTARIO
+  ------------------------+-------+
+  Arquitetura            |  4/5  | Modular, limpa, bem desenhada
+  Correcao cientifica    |  5/5  | Equacoes NASA-7 verificadas,
+                         |       | consistencia termodinamica testada
+  Testes                 |  4/5  | Cobertura excelente para v0.1.0
+  Type stability         |  2/5  | Uso intenso de Dict{String, Any}
+                         |       | compromete performance
+  Documentacao           |  4/5  | Documenter.jl, docstrings, exemplos
+  Parser FORTRAN         |  4/5  | Correto e robusto
+  CI/CD                  |  5/5  | Multi-plataforma, multi-versao, cache
+  Ecossistema Julia      |  3/5  | Project.toml precisa de ajustes,
+                         |       | falta Aqua.jl/JET.jl
+
+9. CONSIDERACOES FINAIS
+
+O Glenn.jl e um pacote solido com excelente base cientifica. A arquitetura
+modular, a hierarquia de excecoes, o context manager e a suite de testes
+mostram maturidade de design.
+
+O TESTE DE CONSISTENCIA TERMODINAMICA (verificacao da derivada de H/RT) e um
+diferencial que poucos pacotes cientificos implementam — reflete o rigor
+academico do autor.
+
+O maior ganho imediato e a MIGRACAO DE Dict{String, Any} PARA STRUCTS TIPADAS
+— isso transforma o desempenho sem alterar a logica.
+
+Em segundo lugar, a CORRECAO DO PROJECT.TOML (SQLite duplicado) evita
+problemas no registro geral de pacotes Julia.
+
+-- Fim do Relatorio --

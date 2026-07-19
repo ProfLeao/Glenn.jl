@@ -179,13 +179,13 @@ function cmd_query(args::Dict)
         species_list = ThermoCalculator.get_available_species(calc, pattern)
         for sp in Iterators.take(species_list, 5)
             @printf("  ID: %4d | Name: %-20s | Phase: %-10s | MW: %s\n",
-                sp["id"], sp["name"], sp["phase"], sp["molecular_weight"])
+                sp.id, sp.name, sp.phase, sp.molecular_weight)
         end
 
         # 3. Properties
         if !isempty(species_list)
-            species_id = species_list[1]["id"]
-            species_name = species_list[1]["name"]
+            species_id = species_list[1].id
+            species_name = species_list[1].name
             println("\n3. PROPERTIES FOR $species_name:")
             println(repeat("-", 70))
             @printf("  %8s | %14s | %14s | %14s\n",
@@ -194,10 +194,9 @@ function cmd_query(args::Dict)
 
             for T in [298.15, 500.0, 1000.0, 1500.0]
                 props = ThermoCalculator.calculate_properties(calc, species_id, T)
-                if props !== nothing
-                    @printf("  %8.2f | %14.3f | %14.1f | %14.3f\n",
-                        props["temperature"], props["cp"],
-                        props["h_relative"], props["s"])
+                @printf("  %8.2f | %14.3f | %14.1f | %14.3f\n",
+                    props.temperature, props.cp,
+                    props.h_relative, props.s)
                 end
             end
 
