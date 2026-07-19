@@ -1,9 +1,11 @@
 name = "Glenn"
 uuid = "d531567c-0c1c-43c6-9163-287e3bec9c15"
 authors = ["Reginaldo Leão"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 
 [compat]

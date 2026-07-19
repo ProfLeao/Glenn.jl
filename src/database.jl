@@ -9,6 +9,65 @@ module ThermoDatabase
 using SQLite
 
 # ------------------------------------------------------------------
+# Exception hierarchy
+# ------------------------------------------------------------------
+
+"""
+    ThermoCalcError
+
+Base exception type for thermochemical calculation errors.
+"""
+struct ThermoCalcError <: Exception
+    msg::String
+end
+Base.showerror(io::IO, e::ThermoCalcError) = print(io, "ThermoCalcError: ", e.msg)
+
+"""
+    DatabaseNotConnectedError
+
+Raised when attempting a calculation without an active database connection.
+"""
+struct DatabaseNotConnectedError <: Exception
+    msg::String
+end
+function DatabaseNotConnectedError()
+    return DatabaseNotConnectedError("Calculation attempted without database connection")
+end
+Base.showerror(io::IO, e::DatabaseNotConnectedError) = print(io, "DatabaseNotConnectedError: ", e.msg)
+
+"""
+    SpeciesNotFoundError
+
+Raised when a species ID is not found in the database.
+"""
+struct SpeciesNotFoundError <: Exception
+    msg::String
+    species_id::Int
+end
+function SpeciesNotFoundError(species_id::Int)
+    return SpeciesNotFoundError("Species ID $species_id not found in database", species_id)
+end
+Base.showerror(io::IO, e::SpeciesNotFoundError) = print(io, "SpeciesNotFoundError: ", e.msg)
+
+"""
+    TemperatureOutOfRangeError
+
+Raised when the requested temperature is outside all valid intervals
+for the given species.
+"""
+struct TemperatureOutOfRangeError <: Exception
+    msg::String
+    temperature::Float64
+    species_name::String
+end
+function TemperatureOutOfRangeError(temperature::Float64, species_name::String)
+    return TemperatureOutOfRangeError(
+        "Temperature $temperature K is out of valid range for species '$species_name'",
+        temperature, species_name)
+end
+Base.showerror(io::IO, e::TemperatureOutOfRangeError) = print(io, "TemperatureOutOfRangeError: ", e.msg)
+
+# ------------------------------------------------------------------
 # Physical constant: Universal Gas Constant
 # ------------------------------------------------------------------
 """
@@ -450,5 +509,11 @@ end
 function calculate_s(coeffs::Dict, T::Float64)
     return calculate_s(NASACoefficients(coeffs), T)
 end
+
+# Export public symbols (used by parent module Glenn)
+export ThermoCalcError, DatabaseNotConnectedError,
+       SpeciesNotFoundError, TemperatureOutOfRangeError
+export NASACoefficients, SpeciesInfo, IntervalData
+export ThermoDB, R_UNIVERSAL
 
 end # module ThermoDatabase

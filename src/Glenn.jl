@@ -51,7 +51,7 @@ module Glenn
 
 Package version string.
 """
-const __version__ = "0.1.0"
+const __version__ = "0.2.0"
 
 """
     Glenn.__author__
@@ -61,68 +61,9 @@ Package author.
 const __author__ = "Dr. Reginaldo G. Leão Jr."
 
 # ------------------------------------------------------------------
-# Exception hierarchy
-# ------------------------------------------------------------------
-
-"""
-    ThermoCalcError
-
-Base exception type for thermochemical calculation errors.
-"""
-struct ThermoCalcError <: Exception
-    msg::String
-end
-Base.showerror(io::IO, e::ThermoCalcError) = print(io, "ThermoCalcError: ", e.msg)
-
-"""
-    DatabaseNotConnectedError
-
-Raised when attempting a calculation without an active database connection.
-"""
-struct DatabaseNotConnectedError <: Exception
-    msg::String
-end
-function DatabaseNotConnectedError()
-    return DatabaseNotConnectedError("Calculation attempted without database connection")
-end
-Base.showerror(io::IO, e::DatabaseNotConnectedError) = print(io, "DatabaseNotConnectedError: ", e.msg)
-
-"""
-    SpeciesNotFoundError
-
-Raised when a species ID is not found in the database.
-"""
-struct SpeciesNotFoundError <: Exception
-    msg::String
-    species_id::Int
-end
-function SpeciesNotFoundError(species_id::Int)
-    return SpeciesNotFoundError("Species ID $species_id not found in database", species_id)
-end
-Base.showerror(io::IO, e::SpeciesNotFoundError) = print(io, "SpeciesNotFoundError: ", e.msg)
-
-"""
-    TemperatureOutOfRangeError
-
-Raised when the requested temperature is outside all valid intervals
-for the given species.
-"""
-struct TemperatureOutOfRangeError <: Exception
-    msg::String
-    temperature::Float64
-    species_name::String
-end
-function TemperatureOutOfRangeError(temperature::Float64, species_name::String)
-    return TemperatureOutOfRangeError(
-        "Temperature $temperature K is out of valid range for species '$species_name'",
-        temperature, species_name)
-end
-Base.showerror(io::IO, e::TemperatureOutOfRangeError) = print(io, "TemperatureOutOfRangeError: ", e.msg)
-
-# ------------------------------------------------------------------
 # Submodules
 # ------------------------------------------------------------------
-include("database.jl")    # SQLite queries & NASA-7 polynomial math
+include("database.jl")    # SQLite queries, exceptions & NASA-7 polynomial math
 include("calculator.jl")  # High-level calculation API
 include("builder.jl")     # thermo.inp → SQLite database builder
 include("cli.jl")         # Command-line interface
@@ -139,6 +80,12 @@ const ThermoProperties = ThermoCalculator.ThermoProperties
 const SpeciesInfo = ThermoDatabase.SpeciesInfo
 const NASACoefficients = ThermoDatabase.NASACoefficients
 const IntervalData = ThermoDatabase.IntervalData
+
+# Exception types (defined in ThermoDatabase, re-exported)
+const ThermoCalcError = ThermoDatabase.ThermoCalcError
+const DatabaseNotConnectedError = ThermoDatabase.DatabaseNotConnectedError
+const SpeciesNotFoundError = ThermoDatabase.SpeciesNotFoundError
+const TemperatureOutOfRangeError = ThermoDatabase.TemperatureOutOfRangeError
 
 # Database functions
 using .ThermoDatabase: find_species, list_species_page, list_all_species,

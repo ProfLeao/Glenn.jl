@@ -197,12 +197,15 @@ function cmd_query(args::Dict)
                 @printf("  %8.2f | %14.3f | %14.1f | %14.3f\n",
                     props.temperature, props.cp,
                     props.h_relative, props.s)
-                end
             end
 
-            h_f = ThermoCalculator.calculate_formation_enthalpy(calc, species_id)
-            if h_f !== nothing
-                println("\n  H°_f(298.15 K) = $(round(h_f, digits=1)) J/mol")
+            try
+                h_f = ThermoCalculator.calculate_formation_enthalpy(calc, species_id)
+                if h_f !== nothing
+                    println("\n  H°_f(298.15 K) = $(round(h_f, digits=1)) J/mol")
+                end
+            catch e
+                @warn "Could not retrieve formation enthalpy: $e"
             end
         end
 
