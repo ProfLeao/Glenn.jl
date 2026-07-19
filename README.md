@@ -11,11 +11,14 @@ stored in a SQLite database. The database is **bundled** with the package —
 ## Features
 
 - **Zero-config**: `Calculator()` uses the bundled `thermo.db` — no setup needed
+- **Context manager**: Automatic connection management with `do`-block syntax
 - Query species by name, phase, molecular weight
 - Calculate Cp(T), H°(T), S°(T) at any valid temperature
 - Enthalpy of formation lookup
 - Enthalpy change between two temperatures (ΔH)
 - Properties over arbitrary temperature ranges
+- Build databases from NASA FORTRAN `thermo.inp` files
+- Command-line interface (`build` and `query`)
 - ~2030 species, 3772 temperature intervals
 - Full [Documenter.jl](https://documenter.juliadocs.org) documentation
 
@@ -36,6 +39,8 @@ julia --project -e 'import Pkg; Pkg.instantiate()'
 
 ## Quick Start
 
+### Basic usage
+
 ```julia
 using Glenn
 
@@ -55,6 +60,37 @@ println("S° = $(round(props["s"], digits=3)) J/(mol·K)")
 close(calc)
 ```
 
+### Context manager (do-block)
+
+```julia
+using Glenn
+
+Calculator() do calc
+    species = get_available_species(calc, "CH4")
+    props = calculate_properties(calc, species[1]["id"], 500.0)
+    println("Cp = $(round(props["cp"], digits=2)) J/(mol·K)")
+end
+```
+
+### Building the database
+
+```julia
+using Glenn
+
+builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
+connect(builder)
+create_tables(builder)
+parse_and_load(builder)
+close(builder)
+```
+
+### CLI
+
+```bash
+julia --project -e 'using Glenn; Glenn.cli_main()' -- build
+julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
+```
+
 ## API Reference
 
 ### Calculator (high-level)
@@ -70,6 +106,16 @@ close(calc)
 | `calculate_enthalpy_change(calc, id, T1, T2)` | ΔH = H(T2) − H(T1) |
 | `get_properties_range(calc, id, Ts)` | Properties over multiple T |
 | `close(calc)` | Close the connection |
+
+### ThermoDBBuilder
+
+| Function | Description |
+|---|---|
+| `ThermoDBBuilder(inp, db)` | Create a database builder |
+| `connect(builder)` | Open the SQLite database |
+| `create_tables(builder)` | Create normalized schema |
+| `parse_and_load(builder)` | Parse thermo.inp and populate DB |
+| `close(builder)` | Close and commit |
 
 ### ThermoDatabase (low-level)
 
