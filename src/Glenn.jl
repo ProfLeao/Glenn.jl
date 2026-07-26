@@ -15,9 +15,8 @@ using Glenn
 # Calculator() uses the bundled thermo.db automatically
 calc = Calculator()
 
-# Find the exact species (filter by name)
-species = get_available_species(calc, "O2")
-o2 = only(s for s in species if s.name == "O2")
+# Find the exact species (case-insensitive exact match)
+o2 = only(get_available_species(calc, "O2", exact_match=true))
 
 # Calculate Cp, H°, S° at 1000 K
 props = calculate_properties(calc, o2.id, 1000.0)

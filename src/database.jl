@@ -300,22 +300,40 @@ end
 # ------------------------------------------------------------------
 
 """
-    find_species(tdb::ThermoDB, name::AbstractString) -> Vector{SpeciesInfo}
+    find_species(tdb::ThermoDB, name::AbstractString; exact_match::Bool=false) -> Vector{SpeciesInfo}
 
-Find species by name or formula (supports partial/substring search).
-Returns up to 20 matches.
+Find species by name or formula.
+
+If `exact_match=false` (default), performs a substring search (LIKE) and
+returns up to 20 matches, with exact matches prioritised first.
+
+If `exact_match=true`, performs a case-insensitive exact match — only the
+species whose name matches the pattern exactly is returned (e.g. ``"N2"``
+returns only N₂, not Be₃N₂).
 """
-function find_species(tdb::ThermoDB, name::AbstractString)
-    pattern = "%$name%"
-    # Prioritize exact name matches first, then partial matches
-    result = SQLite.DBInterface.execute(tdb.db, """
-        SELECT id, name, formula, phase, molecular_weight,
-               heat_of_formation_298K, num_intervals, comments
-        FROM species
-        WHERE name LIKE ? OR formula LIKE ?
-        ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, name
-        LIMIT 20
-    """, (pattern, pattern, name))
+function find_species(tdb::ThermoDB, name::AbstractString; exact_match::Bool=false)
+    if exact_match
+        # Case-insensitive exact match
+        result = SQLite.DBInterface.execute(tdb.db, """
+            SELECT id, name, formula, phase, molecular_weight,
+                   heat_of_formation_298K, num_intervals, comments
+            FROM species
+            WHERE UPPER(name) = UPPER(?)
+            ORDER BY name
+            LIMIT 20
+        """, (name,))
+    else
+        pattern = "%$name%"
+        # Prioritize exact name matches first, then partial matches
+        result = SQLite.DBInterface.execute(tdb.db, """
+            SELECT id, name, formula, phase, molecular_weight,
+                   heat_of_formation_298K, num_intervals, comments
+            FROM species
+            WHERE name LIKE ? OR formula LIKE ?
+            ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, name
+            LIMIT 20
+        """, (pattern, pattern, name))
+    end
     return [_row_to_speciesinfo(r) for r in result]
 end
 

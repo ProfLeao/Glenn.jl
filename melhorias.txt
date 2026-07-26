@@ -1,0 +1,37 @@
+✅ IMPLEMENTADO: exact_match (case-insensitive) em find_species/get_available_species
+   - find_species(tdb, name; exact_match=false) em database.jl
+   - get_available_species(calc, pattern; exact_match=false) em calculator.jl
+   - Usa UPPER(name) = UPPER(?) para busca case-insensitive exata
+   - Documentado no README.md e docstrings
+
+✅ IMPLEMENTADO: Validação cruzada NIST-JANAF
+   - docs/audit/audit.jl — port completo do audit_code.py do pyglenn
+   - Equação de Shomate com coeficientes do NIST Chemistry WebBook (SRD 69)
+   - 7 espécies: CO₂, N₂, CO, H₂O(g), O₂, NH₃, SO₂
+   - 55 pontos de temperatura: 300–3000 K
+   - Gera: glenn_vs_nist.csv + validation_summary.txt
+   - Métricas: erro relativo médio, máximo e RMSE para Cp, ΔH, S°
+
+✅ IMPLEMENTADO: Script CLI executável
+   - bin/glenn.jl — script de entrada com ativação automática do projeto
+   - Uso: julia --project bin/glenn.jl query -s O2
+
+--- ANTERIORES (não implementados neste ciclo) ---
+1. get_statistics ainda retorna Dict
+2. 🟡 BREAKING CHANGE não documentado
+3. 🟡 NASACoefficients aceita Dict — camada extra
+
+stats = Glenn.get_statistics(tdb)
+@test stats["total_species"] == 1      # ← Dict access
+
+Você já criou SpeciesInfo como struct, mas get_statistics ainda retorna Dict{String, Any}. Criar uma DatabaseStats struct (com total_species, total_intervals, avg_molecular_weight, species_by_phase) eliminaria mais um foco de instabilidade.
+
+2. 🟡 BREAKING CHANGE não documentadoA mudança de return nothing para throw(ThermoCalcError(...)) é uma quebra de API — qualquer código que fazia:Código1234props = calculate_properties(calc, id, T)
+if props === nothing
+    # tratamento
+endagora precisa de try/catch. Isso merece:
+Destaque no changelog da versão 0.2.0
+Menção clara nas release notes do GitHub
+
+3. 🟡 NASACoefficients aceita Dict — camada extraO teste mostra:ncoeffs = Glenn.NASACoefficients(coeffs)  # typed versionIsso é ótimo, mas significa que calculate_cp, calculate_h, calculate_s precisam ter múltiplos métodos (um para Dict, um para NASACoefficients). Para performance máxima, você pode deprecar o método com Dict e forçar o uso da struct. Pode usar Base.@deprecate para transição suave.
+

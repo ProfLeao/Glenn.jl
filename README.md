@@ -12,6 +12,7 @@ stored in a SQLite database. The database is **bundled** with the package —
 
 - **Zero-config**: `Calculator()` uses the bundled `thermo.db` — no setup needed
 - **Context manager**: Automatic connection management with `do`-block syntax
+- **Exact-match species lookup**: `exact_match=true` for case-insensitive exact search (e.g. `"N2"` returns only N₂, not Be₃N₂)
 - Query species by name, phase, molecular weight
 - Calculate Cp(T), H°(T), S°(T) at any valid temperature
 - Enthalpy of formation lookup
@@ -19,6 +20,7 @@ stored in a SQLite database. The database is **bundled** with the package —
 - Properties over arbitrary temperature ranges
 - Build databases from NASA FORTRAN `thermo.inp` files
 - Command-line interface (`build` and `query`)
+- **NIST-JANAF cross-validation** — validated against reference data for 7 species (CO₂, N₂, CO, H₂O, O₂, NH₃, SO₂)
 - ~2030 species, 3772 temperature intervals
 - Full [Documenter.jl](https://documenter.juliadocs.org) documentation
 
@@ -47,9 +49,9 @@ using Glenn
 # Uses the bundled thermo.db — no arguments needed
 calc = Calculator()
 
-# Find species by name (partial search)
-species = get_available_species(calc, "O2")
-o2 = only(s for s in species if s.name == "O2")
+# Find species by name — use exact_match=true for case-insensitive exact match
+# (returns only O2, not Al2O2 or Be3N2)
+o2 = only(get_available_species(calc, "O2", exact_match=true))
 
 # Calculate Cp, H°, S° at 1000 K
 props = calculate_properties(calc, o2.id, 1000.0)
@@ -87,9 +89,23 @@ ThermoBuilder.close(builder)
 ### CLI
 
 ```bash
+# Via julia -e (no extra scripts needed)
 julia --project -e 'using Glenn; Glenn.cli_main()' -- build
 julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
+
+# Or use the convenience script
+julia --project bin/glenn.jl query -s O2
 ```
+
+### NIST-JANAF Cross-Validation
+
+Run the cross-validation audit to compare Glenn.jl against NIST-JANAF reference data:
+
+```bash
+julia --project docs/audit/audit.jl
+```
+
+Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary.txt` (aggregated statistics).
 
 ## API Reference
 

@@ -3,3 +3,4 @@
 *.db
 !/data/thermo.db
 /docs/build/
+/dev/

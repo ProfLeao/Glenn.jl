@@ -118,16 +118,21 @@ end
 # ------------------------------------------------------------------
 
 """
-    get_available_species(calc::Calculator, pattern::AbstractString="") -> Vector{SpeciesInfo}
+    get_available_species(calc::Calculator, pattern::AbstractString=""; exact_match::Bool=false) -> Vector{SpeciesInfo}
 
 Return a list of available species, optionally filtered by name pattern.
+
+If `exact_match=false` (default), performs a substring search. Use
+`exact_match=true` for case-insensitive exact match — only the species
+whose name matches the pattern exactly is returned (e.g. ``"N2"`` returns
+only N₂, not Be₃N₂).
 """
-function get_available_species(calc::Calculator, pattern::AbstractString="")
+function get_available_species(calc::Calculator, pattern::AbstractString=""; exact_match::Bool=false)
     if isempty(pattern)
         # Single query for all species — much faster than paginating
         return ThermoDatabase.list_all_species(calc.db)
     else
-        return ThermoDatabase.find_species(calc.db, pattern)
+        return ThermoDatabase.find_species(calc.db, pattern; exact_match=exact_match)
     end
 end
 
