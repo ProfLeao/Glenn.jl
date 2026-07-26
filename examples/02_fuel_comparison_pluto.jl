@@ -6,21 +6,21 @@ using InteractiveUtils
 
 # ╔═╡ 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
 md"""
-# 🔥 Comparação termoquímica de combustíveis
+# 🔥 Thermochemical comparison of fuels
 
-Compara o comportamento térmico de três combustíveis de interesse em sistemas
-energéticos usando **Glenn.jl**:
+Compares the thermal behavior of three fuels of interest in energy systems
+using **Glenn.jl**:
 
-| Espécie | Combustível              |
-|---------|--------------------------|
-| CH₄     | Metano (gás natural)     |
-| C₂H₅OH  | Etanol (biocombustível)  |
-| C₃H₈    | Propano (GLP)            |
+| Species | Fuel                    |
+|---------|-------------------------|
+| CH₄     | Methane (natural gas)   |
+| C₂H₅OH  | Ethanol (biofuel)       |
+| C₃H₈    | Propane (LPG)           |
 
-Visualizamos $C_p(T)$, $S°(T)$ e a variação de entalpia sensível
-ΔH(298.15 K → T) em uma faixa de temperatura relevante para combustão.
+We visualize $C_p(T)$, $S°(T)$ and the sensible enthalpy change
+ΔH(298.15 K → T) over a temperature range relevant to combustion.
 
-> Requer `Plots.jl` — instale com `] add Plots`.
+> Requires `Plots.jl` — install with `] add Plots`.
 """
 
 # ╔═╡ 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
@@ -41,10 +41,10 @@ end
 
 # ╔═╡ 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
 md"""
-## 🔍 Resolvendo os identificadores
+## 🔍 Resolving the identifiers
 
-`get_available_species` com `exact_match=true` realiza uma busca exata
-case-insensitive — `"CH4"` retorna apenas metano.
+`get_available_species` with `exact_match=true` performs a case-insensitive
+exact lookup — `"CH4"` returns only methane.
 """
 
 # ╔═╡ 5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b
@@ -74,7 +74,7 @@ end
 
 # ╔═╡ 9c0d1e2f-3a4b-5c6d-7e8f-9a0b1c2d3e4f
 md"""
-## 📊 Coletando propriedades (300–2000 K)
+## 📊 Collecting properties (300–2000 K)
 """
 
 # ╔═╡ 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
@@ -104,7 +104,7 @@ end
 
 # ╔═╡ 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
 md"""
-## 📈 Resumo numérico
+## 📈 Numerical summary
 """
 
 # ╔═╡ 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
@@ -126,10 +126,10 @@ end
 
 # ╔═╡ 4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e
 md"""
-## 📉 Gráficos interativos
+## 📉 Interactive plots
 
-Os gráficos abaixo são renderizados com **Plots.jl**. Altere os parâmetros
-acima e veja os gráficos se atualizarem automaticamente!
+The plots below are rendered with **Plots.jl**. Change the parameters
+above and watch the plots update automatically!
 """
 
 # ╔═╡ 5c6d7e8f-9a0b-1c2d-3e4f-5a6b7c8d9e0f
@@ -147,7 +147,7 @@ end
 
 # ╔═╡ 6d7e8f9a-0b1c-2d3e-4f5a-6b7c8d9e0f1a
 md"""
-### Capacidade calorífica — $C_p(T)$
+### Heat capacity — $C_p(T)$
 """
 
 # ╔═╡ 7e8f9a0b-1c2d-3e4f-5a6b-7c8d9e0f1a2b
@@ -170,7 +170,7 @@ end
 
 # ╔═╡ 8f9a0b1c-2d3e-4f5a-6b7c-8d9e0f1a2b3c
 md"""
-### Entropia absoluta — $S°(T)$
+### Absolute entropy — $S°(T)$
 """
 
 # ╔═╡ 9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d
@@ -193,7 +193,7 @@ end
 
 # ╔═╡ 0b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e
 md"""
-### Entalpia sensível — ΔH°(298.15 K → T)
+### Sensible enthalpy — ΔH°(298.15 K → T)
 """
 
 # ╔═╡ 1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f
@@ -216,7 +216,7 @@ end
 
 # ╔═╡ 2d3e4f5a-6b7c-8d9e-0f1a-2b3c4d5e6f7a
 md"""
-## 🧹 Limpeza
+## 🧹 Cleanup
 """
 
 # ╔═╡ 3e4f5a6b-7c8d-9e0f-1a2b-3c4d5e6f7a8b
@@ -224,10 +224,10 @@ close(calc)
 
 # ╔═╡ 4f5a6b7c-8d9e-0f1a-2b3c-4d5e6f7a8b9c
 md"""
-✅ **Análise concluída!** Os gráficos mostram que:
-- **Propano (C₃H₈)** tem o maior $C_p$ (mais energia para aquecer)
-- **Metano (CH₄)** tem a maior entalpia sensível por mol
-- **Etanol (C₂H₅OH)** tem a maior entropia absoluta (molécula mais complexa)
+✅ **Analysis complete!** The plots show that:
+- **Propane (C₃H₈)** has the highest $C_p$ (most energy to heat up)
+- **Methane (CH₄)** has the highest sensible enthalpy per mole
+- **Ethanol (C₂H₅OH)** has the highest absolute entropy (most complex molecule)
 """
 
 # ╔═╡ Cell order

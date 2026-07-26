@@ -8,17 +8,17 @@ using InteractiveUtils
 md"""
 # Getting started with Glenn.jl
 
-Esta é a versão **Pluto.jl** interativa do tutorial básico. As células são
-reativas — altere um valor e veja todos os resultados se atualizarem!
+This is the interactive **Pluto.jl** version of the basic tutorial. Cells are
+reactive — change a value and see all results update automatically!
 
-Este notebook percorre o fluxo de trabalho essencial da biblioteca **Glenn.jl**:
+This notebook walks through the essential workflow of the **Glenn.jl** library:
 
-1. Conectar ao banco de dados termoquímico (integrado, sem configuração manual);
-2. Procurar uma espécie química;
-3. Calcular $C_p(T)$, $H^\circ(T)$ e $S^\circ(T)$ em uma dada temperatura.
+1. Connect to the thermochemical database (bundled, no manual setup);
+2. Look up a chemical species;
+3. Compute $C_p(T)$, $H^\circ(T)$ and $S^\circ(T)$ at a given temperature.
 
-O banco `thermo.db` é fornecido dentro do pacote — basta instanciar
-`Calculator()` sem argumentos.
+The `thermo.db` database ships inside the package — just instantiate
+`Calculator()` with no arguments.
 """
 
 # ╔═╡ b1c2d3e4-f5a6-b7c8-d9e0-f1a2b3c4d5e6
@@ -29,10 +29,10 @@ end
 
 # ╔═╡ c2d3e4f5-a6b7-c8d9-e0f1-a2b3c4d5e6f7
 md"""
-## 🔍 Buscando uma espécie
+## 🔍 Looking up a species
 
-Use `get_available_species` com `exact_match=true` para busca exata
-case-insensitive — `"N2"` retorna apenas N₂, não Be₃N₂.
+Use `get_available_species` with `exact_match=true` for case-insensitive
+exact search — `"N2"` returns only N₂, not Be₃N₂.
 """
 
 # ╔═╡ d3e4f5a6-b7c8-d9e0-f1a2-b3c4d5e6f7a8
@@ -40,9 +40,9 @@ calc = Calculator()
 
 # ╔═╡ e4f5a6b7-c8d9-e0f1-a2b3-c4d5e6f7a8b9
 md"""
-### Busca por substring (legado)
+### Substring search (legacy)
 
-Mostra todas as espécies que contêm `"CH4"` no nome.
+Shows all species containing `"CH4"` in the name.
 """
 
 # ╔═╡ f5a6b7c8-d9e0-f1a2-b3c4-d5e6f7a8b9c0
@@ -55,9 +55,9 @@ end
 
 # ╔═╡ a6b7c8d9-e0f1-a2b3-c4d5-e6f7a8b9c0d1
 md"""
-### Busca exata (recomendada)
+### Exact match (recommended)
 
-`exact_match=true` — busca case-insensitive exata. `"O2"` retorna apenas O₂.
+`exact_match=true` — case-insensitive exact search. `"O2"` returns only O₂.
 """
 
 # ╔═╡ b7c8d9e0-f1a2-b3c4-d5e6-f7a8b9c0d1e2
@@ -71,10 +71,10 @@ end
 
 # ╔═╡ c8d9e0f1-a2b3-c4d5-e6f7-a8b9c0d1e2f3
 md"""
-## 🔥 Calculando propriedades termoquímicas
+## 🔥 Computing thermochemical properties
 
-Com o `id` em mãos, `calculate_properties(species_id, temperature)` retorna
-uma struct `ThermoProperties` com $C_p$, $H^\circ$ (relativo a 0 K) e $S^\circ$.
+With the `id` in hand, `calculate_properties(species_id, temperature)` returns
+a `ThermoProperties` struct with $C_p$, $H^\circ$ (relative to 0 K) and $S^\circ$.
 """
 
 # ╔═╡ d9e0f1a2-b3c4-d5e6-f7a8-b9c0d1e2f3a4
@@ -85,8 +85,8 @@ result = calculate_properties(calc, species_ch4.id, 298.15)
 
 # ╔═╡ f1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6
 md"""
-**Resultados para $(result.species_name) ($(result.phase)):**
-- Temperatura: **$(round(result.temperature, digits=2)) K**
+**Results for $(result.species_name) ($(result.phase)):**
+- Temperature: **$(round(result.temperature, digits=2)) K**
 - Cp: **$(round(result.cp, digits=3)) J/(mol·K)**
 - H°: **$(round(result.h_relative, digits=3)) J/mol**
 - S°: **$(round(result.s, digits=3)) J/(mol·K)**
@@ -94,9 +94,9 @@ md"""
 
 # ╔═╡ a2b3c4d5-e6f7-a8b9-c0d1-e2f3a4b5c6d7
 md"""
-## 📈 Varredura de temperatura
+## 📈 Temperature sweep
 
-Calcule $C_p$ para várias temperaturas de uma vez.
+Calculate $C_p$ across multiple temperatures at once.
 """
 
 # ╔═╡ b3c4d5e6-f7a8-b9c0-d1e2-f3a4b5c6d7e8
@@ -115,9 +115,9 @@ end
 
 # ╔═╡ d5e6f7a8-b9c0-d1e2-f3a4-b5c6d7e8f9a0
 md"""
-## 🧪 Entalpia de formação
+## 🧪 Enthalpy of formation
 
-Entalpia de formação padrão a 298.15 K.
+Standard enthalpy of formation at 298.15 K.
 """
 
 # ╔═╡ e6f7a8b9-c0d1-e2f3-a4b5-c6d7e8f9a0b1
@@ -129,7 +129,7 @@ if hf !== nothing
     **H°_f(298.15 K) = $(round(hf, digits=1)) J/mol**
     """
 else
-    md"**H°_f não disponível para $(species_ch4.name)**"
+    md"**H°_f not available for $(species_ch4.name)**"
 end
 
 # ╔═╡ Cell order
