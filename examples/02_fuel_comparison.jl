@@ -39,8 +39,9 @@ println("Resolving species identifiers")
 println("="^60)
 
 function resolve_id(calc, name, phase="gas")
-    for s in get_available_species(calc, name)
-        if s.name == name && s.phase == phase
+    species = get_available_species(calc, name, exact_match = true)
+    for s in species
+        if s.phase == phase
             return s.id
         end
     end

@@ -27,19 +27,21 @@ println("="^60)
 println("Looking up species")
 println("="^60)
 
-# Use get_available_species with a search pattern to find the identifier
-# (`id`) of the species you want.
+# Use get_available_species with exact_match=true for case-insensitive
+# exact match — "O2" returns only O₂, not Al₂O₂ or Be₃N₂.
 calc = Calculator()
 
+# Substring search (legacy) — shows all species containing "CH4"
+println("Substring search 'CH4':")
 species = get_available_species(calc, "CH4")
 for s in species[1:min(5, end)]
     @printf("  id=%5d  %-12s phase=%s\n", s.id, s.name, s.phase)
 end
 
-# Also try O2
-println()
-species = get_available_species(calc, "O2")
-for s in species[1:min(5, end)]
+# Exact match — returns only the exact species
+println("\nExact match 'O2':")
+o2_list = get_available_species(calc, "O2", exact_match = true)
+for s in o2_list
     @printf("  id=%5d  %-12s phase=%s  MW=%.4f\n",
         s.id, s.name, s.phase, something(s.molecular_weight, 0.0))
 end
@@ -55,7 +57,7 @@ println("="^60)
 
 # With the `id` in hand, `calculate_properties(species_id, temperature)`
 # returns a `ThermoProperties` struct with Cp, H° (relative to 0 K) and S°.
-species_ch4 = only(s for s in get_available_species(calc, "CH4") if s.name == "CH4")
+species_ch4 = only(get_available_species(calc, "CH4", exact_match = true))
 result = calculate_properties(calc, species_ch4.id, 298.15)
 
 println("Species : ", result.species_name, " (", result.phase, ")")

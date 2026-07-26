@@ -68,8 +68,8 @@ close(calc)
 using Glenn
 
 Calculator() do calc
-    species = get_available_species(calc, "CH4")
-    props = calculate_properties(calc, species[1].id, 500.0)
+    ch4 = only(get_available_species(calc, "CH4", exact_match = true))
+    props = calculate_properties(calc, ch4.id, 500.0)
     println("Cp = $(round(props.cp, digits=2)) J/(mol·K)")
 end
 ```

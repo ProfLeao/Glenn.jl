@@ -19,8 +19,8 @@ combustion.
 
 ## Resolving the identifiers
 
-`get_available_species` matches by substring, so we filter by exact name
-and gas phase to get the correct `id` for each species.
+`get_available_species` with `exact_match=true` performs a case-insensitive
+exact lookup — `"CH4"` returns only methane, not longer hydrocarbons.
 
 ```@example fuel
 using Glenn
@@ -32,8 +32,9 @@ FUELS = Dict(
 )
 
 function resolve_id(calc, name, phase="gas")
-    for s in get_available_species(calc, name)
-        if s.name == name && s.phase == phase
+    species = get_available_species(calc, name, exact_match = true)
+    for s in species
+        if s.phase == phase
             return s.id
         end
     end

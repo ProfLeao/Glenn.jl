@@ -22,17 +22,18 @@ calc = Calculator()
 
 ## Looking up a species
 
-Use `get_available_species` with a search pattern to find the identifier
-(`id`) of the species you want.
+Use `get_available_species` with `exact_match=true` for case-insensitive
+exact lookup — `"O2"` returns only O₂, not Al₂O₂ or Be₃N₂.
 
 ```@repl basic_usage
+# Substring search (legacy) — shows all species containing "CH4"
 species = get_available_species(calc, "CH4")
 for s in species[1:min(5, end)]
     println("id=", lpad(s.id, 5), "  ", rpad(s.name, 12), " phase=", s.phase)
 end
 
-# Also look up O2 with molecular weight
-o2_species = get_available_species(calc, "O2")
+# Exact match (recommended) — returns only O2
+o2_species = get_available_species(calc, "O2", exact_match = true)
 for s in o2_species
     println("id=", lpad(s.id, 5), "  ", rpad(s.name, 12),
             " phase=", s.phase, "  MW=", round(something(s.molecular_weight, 0.0), digits=4))
@@ -45,7 +46,7 @@ With the `id` in hand, `calculate_properties(species_id, temperature)`
 returns a `ThermoProperties` struct with $C_p$, $H^\circ$ (relative to 0 K) and $S^\circ$.
 
 ```@repl basic_usage
-species_ch4 = only(s for s in get_available_species(calc, "CH4") if s.name == "CH4")
+species_ch4 = only(get_available_species(calc, "CH4", exact_match = true))
 result = calculate_properties(calc, species_ch4.id, 298.15)
 println("Species: ", result.species_name, " (", result.phase, ")")
 println("T:       ", round(result.temperature, digits=2), " K")
@@ -73,7 +74,7 @@ end
 
 ```@repl basic_usage
 for name in ["CH4", "O2", "CO2", "H2O"]
-    sp = only(s for s in get_available_species(calc, name) if s.name == name && s.phase == "gas")
+    sp = only(get_available_species(calc, name, exact_match = true))
     h_f = calculate_formation_enthalpy(calc, sp.id)
     if h_f !== nothing
         @printf("%-8s  ΔH°f(298.15 K) = %12.1f J/mol  (%8.3f kJ/mol)\n",

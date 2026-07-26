@@ -16,9 +16,9 @@ using Glenn
 # Calculator() uses the bundled thermo.db automatically
 calc = Calculator()
 
-# Find species by name (partial search)
-species = get_available_species(calc, "O2")
-o2 = only(s for s in species if s.name == "O2")
+# Find species by name — use exact_match=true for case-insensitive exact match
+# (returns only O2, not Al2O2 or Be3N2)
+o2 = only(get_available_species(calc, "O2", exact_match = true))
 
 # Calculate properties at 1000 K
 props = calculate_properties(calc, o2.id, 1000.0)

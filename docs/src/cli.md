@@ -9,17 +9,13 @@ Glenn.jl provides a command-line interface for building databases and querying s
 ## Usage
 
 ```bash
-# Build database from bundled thermo.inp
+# Via julia -e (no extra scripts needed)
 julia --project -e 'using Glenn; Glenn.cli_main()' -- build
-
-# Build from custom input
-julia --project -e 'using Glenn; Glenn.cli_main()' -- build -i my_thermo.inp -o my_thermo.db
-
-# Query species properties (uses bundled thermo.db)
 julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s O2
 
-# Query with custom database
-julia --project -e 'using Glenn; Glenn.cli_main()' -- query -d my_thermo.db -s CO2
+# Or use the convenience script
+julia --project bin/glenn.jl build -i my_thermo.inp -o my_thermo.db
+julia --project bin/glenn.jl query -s CO2
 ```
 
 ## Commands
