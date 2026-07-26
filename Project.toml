@@ -1,6 +1,6 @@
 name = "Glenn"
 uuid = "d531567c-0c1c-43c6-9163-287e3bec9c15"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Reginaldo Leão"]
 
 [deps]

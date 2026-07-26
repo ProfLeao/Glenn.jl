@@ -116,7 +116,7 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | `Calculator()` | Open the **bundled** `thermo.db` |
 | `Calculator(path)` | Open a custom database |
 | `default_db_path()` | Resolve path to the bundled database |
-| `get_available_species(calc, pattern)` | List/filter species |
+| `get_available_species(calc, pattern; exact_match)` | List/filter species |
 | `calculate_properties(calc, id, T)` | Compute Cp, H°, S° at T (K) → `ThermoProperties` |
 | `calculate_formation_enthalpy(calc, id)` | ΔH°f at 298.15 K (J/mol) |
 | `calculate_enthalpy_change(calc, id, T1, T2)` | ΔH = H(T2) − H(T1) |
@@ -139,7 +139,7 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 |---|---|
 | `ThermoDB(path)` | Raw SQLite connection |
 | `get_statistics(tdb)` | Database summary stats |
-| `find_species(tdb, name)` | Search species by name |
+| `find_species(tdb, name; exact_match)` | Search species by name (case-insensitive exact with `exact_match=true`) |
 | `list_species_page(tdb; page, page_size)` | Paginated species listing |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
