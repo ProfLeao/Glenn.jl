@@ -5,8 +5,8 @@ Computes Cp(T), H°(T), S°(T) from NASA-7 polynomial coefficients
 stored in a SQLite database.
 
 All values returned in standard units:
-  Cp, S°  → J/(mol·K)
-  H°      → J/mol
+Cp, S°  → J/(mol·K)
+H°      → J/mol
 """
 module ThermoCalculator
 
@@ -47,14 +47,15 @@ Immutable struct holding calculated thermochemical properties at a given
 temperature. All values in SI units: Cp, S° → J/(mol·K); H° → J/mol.
 
 # Fields
-- `temperature::Float64`  : Temperature (K)
-- `cp::Float64`           : Heat capacity (J/(mol·K))
-- `h_relative::Float64`   : Enthalpy relative to 0 K (J/mol)
-- `s::Float64`            : Absolute entropy (J/(mol·K))
-- `temp_min::Float64`     : Lower bound of valid interval (K)
-- `temp_max::Float64`     : Upper bound of valid interval (K)
-- `species_name::String`  : Species name
-- `phase::String`         : Phase ("gas" or "condensed")
+
+  - `temperature::Float64`  : Temperature (K)
+  - `cp::Float64`           : Heat capacity (J/(mol·K))
+  - `h_relative::Float64`   : Enthalpy relative to 0 K (J/mol)
+  - `s::Float64`            : Absolute entropy (J/(mol·K))
+  - `temp_min::Float64`     : Lower bound of valid interval (K)
+  - `temp_max::Float64`     : Upper bound of valid interval (K)
+  - `species_name::String`  : Species name
+  - `phase::String`         : Phase ("gas" or "condensed")
 """
 struct ThermoProperties
     temperature::Float64
@@ -74,7 +75,7 @@ High-level interface for calculating thermochemical properties.
 Wraps a `ThermoDB` connection.
 
 Call without arguments to use the bundled `thermo.db`:
-    calc = Calculator()
+calc = Calculator()
 """
 mutable struct Calculator
     db::ThermoDatabase.ThermoDB
@@ -86,7 +87,7 @@ end
 Create a Calculator connected to a thermo.db database.
 Defaults to the bundled database shipped with the package.
 """
-function Calculator(path::String=default_db_path())
+function Calculator(path::String = default_db_path())
     db = ThermoDatabase.ThermoDB(path)
     return Calculator(db)
 end
@@ -127,12 +128,16 @@ If `exact_match=false` (default), performs a substring search. Use
 whose name matches the pattern exactly is returned (e.g. ``"N2"`` returns
 only N₂, not Be₃N₂).
 """
-function get_available_species(calc::Calculator, pattern::AbstractString=""; exact_match::Bool=false)
+function get_available_species(
+    calc::Calculator,
+    pattern::AbstractString = "";
+    exact_match::Bool = false,
+)
     if isempty(pattern)
         # Single query for all species — much faster than paginating
         return ThermoDatabase.list_all_species(calc.db)
     else
-        return ThermoDatabase.find_species(calc.db, pattern; exact_match=exact_match)
+        return ThermoDatabase.find_species(calc.db, pattern; exact_match = exact_match)
     end
 end
 
@@ -158,18 +163,20 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
         throw(ThermoCalcError("Species ID $species_id not found in database"))
     end
 
-    interval_data = ThermoDatabase.get_species_for_temperature(
-        calc.db, species_id, T)
+    interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
 
     if interval_data === nothing
-        throw(ThermoCalcError(
-            "Temperature $T K is out of valid range for '$(info.name)'. " *
-            "Use get_species_data($species_id) to check available intervals."))
+        throw(
+            ThermoCalcError(
+                "Temperature $T K is out of valid range for '$(info.name)'. " *
+                "Use get_species_data($species_id) to check available intervals.",
+            ),
+        )
     end
 
     cp_r = ThermoDatabase.calculate_cp(interval_data.coefficients, T)
     h_rt = ThermoDatabase.calculate_h(interval_data.coefficients, T)
-    s_r  = ThermoDatabase.calculate_s(interval_data.coefficients, T)
+    s_r = ThermoDatabase.calculate_s(interval_data.coefficients, T)
 
     R = ThermoDatabase.R_UNIVERSAL
 
@@ -198,8 +205,11 @@ version in a loop.
 Throws `SpeciesNotFoundError` if the species ID is invalid.
 Skips temperatures outside valid intervals (returns only valid results).
 """
-function calculate_properties(calc::Calculator, species_id::Int,
-                               T_range::AbstractVector{<:Real})
+function calculate_properties(
+    calc::Calculator,
+    species_id::Int,
+    T_range::AbstractVector{<:Real},
+)
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
         throw(ThermoCalcError("Species ID $species_id not found in database"))
@@ -230,13 +240,21 @@ function calculate_properties(calc::Calculator, species_id::Int,
 
         cp_r = ThermoDatabase.calculate_cp(interval_data.coefficients, Tf)
         h_rt = ThermoDatabase.calculate_h(interval_data.coefficients, Tf)
-        s_r  = ThermoDatabase.calculate_s(interval_data.coefficients, Tf)
+        s_r = ThermoDatabase.calculate_s(interval_data.coefficients, Tf)
 
-        push!(results, ThermoProperties(
-            Tf, cp_r * R, h_rt * Tf * R, s_r * R,
-            interval_data.temp_min, interval_data.temp_max,
-            info.name, info.phase,
-        ))
+        push!(
+            results,
+            ThermoProperties(
+                Tf,
+                cp_r * R,
+                h_rt * Tf * R,
+                s_r * R,
+                interval_data.temp_min,
+                interval_data.temp_max,
+                info.name,
+                info.phase,
+            ),
+        )
     end
 
     return results
@@ -270,8 +288,12 @@ Calculate ΔH = H(T2) - H(T1) for a species (J/mol).
 
 Throws on invalid species or out-of-range temperatures.
 """
-function calculate_enthalpy_change(calc::Calculator, species_id::Int,
-                                    T1::Float64, T2::Float64)
+function calculate_enthalpy_change(
+    calc::Calculator,
+    species_id::Int,
+    T1::Float64,
+    T2::Float64,
+)
     props1 = calculate_properties(calc, species_id, T1)
     props2 = calculate_properties(calc, species_id, T2)
     return props2.h_relative - props1.h_relative
@@ -285,8 +307,11 @@ Calculate thermochemical properties over a range of temperatures.
 
 Delegates to the vectorized `calculate_properties` for efficiency.
 """
-function get_properties_range(calc::Calculator, species_id::Int,
-                               T_range::AbstractVector{<:Real})
+function get_properties_range(
+    calc::Calculator,
+    species_id::Int,
+    T_range::AbstractVector{<:Real},
+)
     return calculate_properties(calc, species_id, T_range)
 end
 

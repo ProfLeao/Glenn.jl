@@ -16,13 +16,13 @@ using Glenn
 calc = Calculator()
 
 # Find the exact species (case-insensitive exact match)
-o2 = only(get_available_species(calc, "O2", exact_match=true))
+o2 = only(get_available_species(calc, "O2", exact_match = true))
 
 # Calculate Cp, H°, S° at 1000 K
 props = calculate_properties(calc, o2.id, 1000.0)
-println("Cp = ", round(props.cp, digits=2), " J/(mol·K)")
-println("H° = ", round(props.h_relative, digits=1), " J/mol")
-println("S° = ", round(props.s, digits=3), " J/(mol·K)")
+println("Cp = ", round(props.cp, digits = 2), " J/(mol·K)")
+println("H° = ", round(props.h_relative, digits = 1), " J/mol")
+println("S° = ", round(props.s, digits = 3), " J/(mol·K)")
 
 close(calc)
 ```
@@ -36,7 +36,7 @@ using Glenn
 Calculator() do calc
     species = get_available_species(calc, "CH4")
     props = calculate_properties(calc, species[1].id, 500.0)
-    println("Cp = ", round(props.cp, digits=2), " J/(mol·K)")
+    println("Cp = ", round(props.cp, digits = 2), " J/(mol·K)")
 end
 ```
 """
@@ -87,20 +87,41 @@ const SpeciesNotFoundError = ThermoDatabase.SpeciesNotFoundError
 const TemperatureOutOfRangeError = ThermoDatabase.TemperatureOutOfRangeError
 
 # Database functions
-using .ThermoDatabase: find_species, list_species_page, list_all_species,
-    get_species_data, get_species_info, get_species_for_temperature,
-    get_statistics, calculate_cp, calculate_h, calculate_s
+using .ThermoDatabase:
+    find_species,
+    list_species_page,
+    list_all_species,
+    get_species_data,
+    get_species_info,
+    get_species_for_temperature,
+    get_statistics,
+    calculate_cp,
+    calculate_h,
+    calculate_s
 
 # Calculator functions (high-level API)
-using .ThermoCalculator: get_available_species, calculate_properties,
-    calculate_formation_enthalpy, calculate_enthalpy_change,
-    get_properties_range, default_db_path, default_inp_path
+using .ThermoCalculator:
+    get_available_species,
+    calculate_properties,
+    calculate_formation_enthalpy,
+    calculate_enthalpy_change,
+    get_properties_range,
+    default_db_path,
+    default_inp_path
 
 # Builder functions
-using .ThermoBuilder: parse_float, parse_species_record,
-    parse_general_info_record, parse_temp_interval_record,
-    parse_coefficients_record, is_temperature_line, is_coefficient_line,
-    read_thermo_file, connect, create_tables, parse_and_load
+using .ThermoBuilder:
+    parse_float,
+    parse_species_record,
+    parse_general_info_record,
+    parse_temp_interval_record,
+    parse_coefficients_record,
+    is_temperature_line,
+    is_coefficient_line,
+    read_thermo_file,
+    connect,
+    create_tables,
+    parse_and_load
 
 # CLI
 using .CLI: cli_main
@@ -122,7 +143,7 @@ Calculator() do calc
 end
 ```
 """
-function (::Type{Calculator})(f::Function, path::AbstractString=default_db_path())
+function (::Type{Calculator})(f::Function, path::AbstractString = default_db_path())
     calc = Calculator(path)
     try
         f(calc)
@@ -145,18 +166,27 @@ export R_UNIVERSAL
 export default_db_path, default_inp_path
 
 # Exception types
-export ThermoCalcError, DatabaseNotConnectedError,
-       SpeciesNotFoundError, TemperatureOutOfRangeError
+export ThermoCalcError,
+    DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
 
 # Database functions (low-level)
-export find_species, list_species_page, list_all_species,
-       get_species_data, get_species_info, get_species_for_temperature,
-       get_statistics, calculate_cp, calculate_h, calculate_s
+export find_species,
+    list_species_page,
+    list_all_species,
+    get_species_data,
+    get_species_info,
+    get_species_for_temperature,
+    get_statistics,
+    calculate_cp,
+    calculate_h,
+    calculate_s
 
 # Calculator functions (high-level)
-export get_available_species, calculate_properties,
-       calculate_formation_enthalpy, calculate_enthalpy_change,
-       get_properties_range
+export get_available_species,
+    calculate_properties,
+    calculate_formation_enthalpy,
+    calculate_enthalpy_change,
+    get_properties_range
 
 # CLI
 export cli_main

@@ -27,15 +27,17 @@ Parse CLI arguments into a structured Dict.
 
 # Commands
 
-- `build` — Convert thermo.inp → SQLite database
-  - `-i, --input`  : Input FORTRAN file (default: thermo.inp)
-  - `-o, --output` : Output SQLite database (default: thermo.db)
-  - `-v, --verbose`: Enable verbose (DEBUG) logging
+  - `build` — Convert thermo.inp → SQLite database
 
-- `query` — Run example queries against the database
-  - `-d, --database`: SQLite database file (default: bundled thermo.db)
-  - `-s, --species` : Species name pattern to search (default: O2)
-  - `-v, --verbose` : Enable verbose (DEBUG) logging
+      + `-i, --input`  : Input FORTRAN file (default: thermo.inp)
+      + `-o, --output` : Output SQLite database (default: thermo.db)
+      + `-v, --verbose`: Enable verbose (DEBUG) logging
+
+  - `query` — Run example queries against the database
+
+      + `-d, --database`: SQLite database file (default: bundled thermo.db)
+      + `-s, --species` : Species name pattern to search (default: O2)
+      + `-v, --verbose` : Enable verbose (DEBUG) logging
 """
 function parse_cli_args(args::Vector{String})
     # Use bundled paths as defaults
@@ -119,12 +121,16 @@ function cmd_build(args::Dict)
 
         conn = builder.conn
         if conn !== nothing
-            total_species = first(SQLite.DBInterface.execute(conn,
-                "SELECT COUNT(*) FROM species"))
-            total_intervals = first(SQLite.DBInterface.execute(conn,
-                "SELECT COUNT(*) FROM temperature_intervals"))
-            total_coeffs = first(SQLite.DBInterface.execute(conn,
-                "SELECT COUNT(*) FROM coefficients"))
+            total_species =
+                first(SQLite.DBInterface.execute(conn, "SELECT COUNT(*) FROM species"))
+            total_intervals = first(
+                SQLite.DBInterface.execute(
+                    conn,
+                    "SELECT COUNT(*) FROM temperature_intervals",
+                ),
+            )
+            total_coeffs =
+                first(SQLite.DBInterface.execute(conn, "SELECT COUNT(*) FROM coefficients"))
 
             println("\nDatabase Statistics:")
             println("  Species: $(total_species[1])")
@@ -171,15 +177,22 @@ function cmd_query(args::Dict)
         println("  Total intervals: $(stats["total_intervals"])")
         println("  Total coefficient sets: $(stats["total_coeff_sets"])")
         println("  Species by phase: $(stats["species_by_phase"])")
-        println("  Average molecular weight: $(round(stats["avg_molecular_weight"], digits=2)) g/mol")
+        println(
+            "  Average molecular weight: $(round(stats["avg_molecular_weight"], digits=2)) g/mol",
+        )
 
         # 2. Search
         println("\n2. SPECIES SEARCH ('$pattern'):")
         println(repeat("-", 70))
         species_list = ThermoCalculator.get_available_species(calc, pattern)
         for sp in Iterators.take(species_list, 5)
-            @printf("  ID: %4d | Name: %-20s | Phase: %-10s | MW: %s\n",
-                sp.id, sp.name, sp.phase, sp.molecular_weight)
+            @printf(
+                "  ID: %4d | Name: %-20s | Phase: %-10s | MW: %s\n",
+                sp.id,
+                sp.name,
+                sp.phase,
+                sp.molecular_weight
+            )
         end
 
         # 3. Properties
@@ -188,15 +201,24 @@ function cmd_query(args::Dict)
             species_name = species_list[1].name
             println("\n3. PROPERTIES FOR $species_name:")
             println(repeat("-", 70))
-            @printf("  %8s | %14s | %14s | %14s\n",
-                "T (K)", "Cp (J/mol·K)", "H° (J/mol)", "S° (J/mol·K)")
+            @printf(
+                "  %8s | %14s | %14s | %14s\n",
+                "T (K)",
+                "Cp (J/mol·K)",
+                "H° (J/mol)",
+                "S° (J/mol·K)"
+            )
             println(repeat("-", 70))
 
             for T in [298.15, 500.0, 1000.0, 1500.0]
                 props = ThermoCalculator.calculate_properties(calc, species_id, T)
-                @printf("  %8.2f | %14.3f | %14.1f | %14.3f\n",
-                    props.temperature, props.cp,
-                    props.h_relative, props.s)
+                @printf(
+                    "  %8.2f | %14.3f | %14.1f | %14.3f\n",
+                    props.temperature,
+                    props.cp,
+                    props.h_relative,
+                    props.s
+                )
             end
 
             try
@@ -226,7 +248,8 @@ end
 Print CLI usage information.
 """
 function print_help()
-    println("""
+    println(
+        """
 Glenn.jl — Thermochemical Properties Calculator
 
 USAGE:
@@ -258,7 +281,8 @@ EXAMPLES:
 
     # Query with custom database
     julia --project -e 'using Glenn; Glenn.cli_main()' -- query -d my_thermo.db -s CO2
-""")
+""",
+    )
 end
 
 # ------------------------------------------------------------------
@@ -271,7 +295,7 @@ end
 Main CLI entry point. Parses arguments and dispatches to the
 appropriate subcommand.
 """
-function cli_main(args::Vector{String}=String[])
+function cli_main(args::Vector{String} = String[])
     if isempty(args)
         print_help()
         return
