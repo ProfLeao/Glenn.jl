@@ -6,6 +6,12 @@ All notable changes to Glenn.jl are documented in this file.
 
 ## [0.3.0] — 2026-07-26
 
+### ⚠️ Breaking Changes
+
+- **No breaking changes.** All additions in this release are backwards-compatible.
+  The `exact_match` keyword parameter defaults to `false`, preserving existing
+  behaviour for all callers.
+
 ### ✨ Added
 
 - **`exact_match` parameter** in `find_species` and `get_available_species` for
