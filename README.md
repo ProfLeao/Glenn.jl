@@ -43,58 +43,111 @@ julia --project -e 'import Pkg; Pkg.instantiate()'
 
 ### Basic usage
 
+The database ships **inside the package** — `Calculator()` works immediately
+with zero configuration. All properties are returned in SI units
+(Cp, S° → J/(mol·K); H° → J/mol).
+
 ```julia
 using Glenn
 
-# Uses the bundled thermo.db — no arguments needed
+# No setup needed — uses the bundled thermo.db
 calc = Calculator()
 
-# Find species by name — use exact_match=true for case-insensitive exact match
-# (returns only O2, not Al2O2 or Be3N2)
-o2 = only(get_available_species(calc, "O2", exact_match=true))
+# exact_match=true: case-insensitive exact lookup
+# "O2" returns only O₂, not Al₂O₂ or Be₃N₂
+o2 = only(get_available_species(calc, "O2", exact_match = true))
 
-# Calculate Cp, H°, S° at 1000 K
+# Single-point calculation at 1000 K
 props = calculate_properties(calc, o2.id, 1000.0)
-println("Cp = $(round(props.cp, digits=2)) J/(mol·K)")
-println("H° = $(round(props.h_relative, digits=1)) J/mol")
-println("S° = $(round(props.s, digits=3)) J/(mol·K)")
+println("Species:  ", props.species_name, " (", props.phase, ")")
+println("T       = ", props.temperature, " K")
+println("Cp      = ", round(props.cp, digits = 2), " J/(mol·K)")
+println("H°      = ", round(props.h_relative, digits = 1), " J/mol")
+println("S°      = ", round(props.s, digits = 3), " J/(mol·K)")
+
+# Enthalpy of formation
+hf = calculate_formation_enthalpy(calc, o2.id)   # J/mol
+
+# Enthalpy change between two temperatures
+dh = calculate_enthalpy_change(calc, o2.id, 300.0, 1500.0)
+
+# Properties over a temperature range (vectorized — fast)
+results = get_properties_range(calc, o2.id, 300:50:2000)
 
 close(calc)
 ```
 
-### Context manager (do-block)
+### Context manager (`do`-block)
+
+Use the `do`-block syntax for **automatic connection management** — the database
+is opened before the block and closed after, even if an exception occurs.
 
 ```julia
 using Glenn
 
+# Recommended pattern: no manual connect/close needed
 Calculator() do calc
     ch4 = only(get_available_species(calc, "CH4", exact_match = true))
     props = calculate_properties(calc, ch4.id, 500.0)
-    println("Cp = $(round(props.cp, digits=2)) J/(mol·K)")
+    println("Cp(CH₄, 500 K) = ", round(props.cp, digits = 2), " J/(mol·K)")
+end
+# Database is automatically closed here
+```
+
+You can also point to a custom database:
+
+```julia
+Calculator("path/to/custom.db") do calc
+    # ... same API ...
 end
 ```
 
 ### Building the database
 
+> **⚠️ You do NOT need to build the database for normal use.**
+> The package ships with a pre-built `thermo.db` containing ~2030 species
+> and 3772 temperature intervals. `Calculator()` uses it automatically.
+
+You only need to rebuild the database in these situations:
+
+| Scenario | Why rebuild? |
+|---|---|
+| 🔧 **Custom coefficients** | You modified `thermo.inp` with your own NASA-7 parameters |
+| 🔬 **Extended dataset** | You added new species to the FORTRAN source file |
+| 🩹 **Corrupted database** | The `thermo.db` file was accidentally deleted or damaged |
+| 📦 **Embedded deployment** | You want to ship a minimal DB with only specific species |
+
 ```julia
 using Glenn
 
+# Build from the bundled thermo.inp (shipped with the package)
 builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
 ThermoBuilder.connect(builder)
 ThermoBuilder.create_tables(builder)
 ThermoBuilder.parse_and_load(builder)
 ThermoBuilder.close(builder)
+
+# Build from a custom FORTRAN file
+builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
+# ... same connect → create → parse → close cycle
 ```
 
 ### CLI
 
+The command-line interface provides quick access to species data and
+database operations without opening a REPL.
+
 ```bash
-# Via julia -e (no extra scripts needed)
-julia --project -e 'using Glenn; Glenn.cli_main()' -- build
+# Quick species lookup
 julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
+julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CO2
 
 # Or use the convenience script
 julia --project bin/glenn.jl query -s O2
+
+# Database rebuild (only if needed — see section above)
+julia --project -e 'using Glenn; Glenn.cli_main()' -- build
+julia --project bin/glenn.jl build -i custom.inp -o custom.db
 ```
 
 ### NIST-JANAF Cross-Validation
