@@ -40,7 +40,5 @@ cp(
     force=true,
 )
 
-deploydocs(
-    repo = "github.com/ProfLeao/Glenn.jl.git",
-    devbranch = "main",
-)
+# Deploy is handled by GitHub Actions using peaceiris/actions-gh-pages
+# (uses GITHUB_TOKEN — no SSH key needed)
