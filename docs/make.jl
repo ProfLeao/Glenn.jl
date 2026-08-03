@@ -13,7 +13,7 @@ makedocs(
     sitename = "Glenn.jl",
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
-        canonical = "https://profl.github.io/Glenn.jl/stable/",
+        canonical = "https://profleao.github.io/Glenn.jl/",
         assets = ["assets/logo-sidebar.css"],
     ),
     pages = [

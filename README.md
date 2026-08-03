@@ -1,8 +1,8 @@
 # Glenn.jl — Thermochemical Properties Calculator for Julia
 
 [![Build Status](https://github.com/ProfLeao/Glenn.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/ProfLeao/Glenn.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://profl.github.io/Glenn.jl/stable/)
-[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://profl.github.io/Glenn.jl/dev/)
+[![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://profleao.github.io/Glenn.jl/)
+[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://profleao.github.io/Glenn.jl/)
 
 Computes **Cp(T)**, **H°(T)**, **S°(T)** from NASA-7 polynomial coefficients
 stored in a SQLite database. The database is **bundled** with the package —
