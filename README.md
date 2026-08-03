@@ -230,7 +230,7 @@ from the NASA Glenn FORTRAN thermochemical tables.
 
 ## Documentation
 
-Full documentation is available at [profl.github.io/Glenn.jl/stable](https://profl.github.io/Glenn.jl/stable/).
+Full documentation is available at [profleao.github.io/Glenn.jl/](https://profleao.github.io/Glenn.jl/).
 
 ## License
 
