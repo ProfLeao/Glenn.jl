@@ -40,6 +40,15 @@ All notable changes to Glenn.jl are documented in this file.
   separately, instead of a single misleading `Total species loaded: 0` when
   rebuilding into an already-populated database.
 
+### 📝 Documentation
+
+- Documented `R_GLENN`, `get_gas_constant_ref`, `write_metadata`, and
+  `migrate_metadata!` in the API reference (Calculator, Database, and Builder
+  pages).
+- Added the `metadata` table to the database contents in `docs` and `README.md`.
+- Added a Constants section to `README.md` describing `R_UNIVERSAL` and
+  `R_GLENN`.
+
 ### ⚠️ Breaking Changes
 
 - **No API breakage.** `R_UNIVERSAL` remains exported; databases without the
