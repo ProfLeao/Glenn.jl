@@ -474,6 +474,7 @@ function parse_and_load(builder::ThermoDBBuilder)
         # --- Species loop ---
         i = 3  # 1-based index (skip THERMO header + metadata)
         species_count = 0
+        existing_count = 0
         skipped = 0
 
         while i <= length(lines)
@@ -548,6 +549,7 @@ function parse_and_load(builder::ThermoDBBuilder)
                             skipped += 1
                             continue
                         end
+                        existing_count += 1
                     else
                         rethrow(e)
                     end
@@ -656,8 +658,9 @@ function parse_and_load(builder::ThermoDBBuilder)
         write_metadata(builder)
 
         @info repeat("=", 70)
-        @info "Total species loaded: $species_count"
-        @info "Skipped lines: $skipped"
+        @info "New species loaded: $species_count"
+        @info "Already existing:   $existing_count"
+        @info "Skipped lines:      $skipped"
         @info "Database: $(builder.db_file)"
 
     catch e
