@@ -32,6 +32,12 @@ Glenn.ThermoDatabase.ThermoDB
 Glenn.get_statistics
 ```
 
+## Reference Gas Constant
+
+```@docs
+Glenn.get_gas_constant_ref
+```
+
 ## Species Lookup
 
 ```@docs

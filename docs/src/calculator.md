@@ -29,4 +29,5 @@ get_properties_range
 
 ```@docs
 Glenn.ThermoDatabase.R_UNIVERSAL
+Glenn.ThermoDatabase.R_GLENN
 ```
