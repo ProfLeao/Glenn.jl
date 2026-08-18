@@ -36,6 +36,9 @@ All notable changes to Glenn.jl are documented in this file.
   (instead of `R_UNIVERSAL`) for all Cp/H/S denormalisation — scalar and
   vectorised paths.
 - **`ThermoDBBuilder`** writes dataset metadata automatically during `build`.
+- **`parse_and_load`** now reports `New species loaded` and `Already existing`
+  separately, instead of a single misleading `Total species loaded: 0` when
+  rebuilding into an already-populated database.
 
 ### ⚠️ Breaking Changes
 
