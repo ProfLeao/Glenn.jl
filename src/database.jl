@@ -167,6 +167,27 @@ struct IntervalData
     coefficients::NASACoefficients
 end
 
+"""
+    DatabaseStats
+
+Immutable struct holding database summary statistics.
+
+# Fields
+
+  - `total_species::Int`            : Number of chemical species
+  - `total_intervals::Int`          : Number of temperature intervals
+  - `total_coeff_sets::Int`         : Number of coefficient sets
+  - `species_by_phase::Dict`        : Species count grouped by phase
+  - `avg_molecular_weight::Union`   : Mean molecular weight (g/mol), or `nothing`
+"""
+struct DatabaseStats
+    total_species::Int
+    total_intervals::Int
+    total_coeff_sets::Int
+    species_by_phase::Dict{String, Int}
+    avg_molecular_weight::Union{Float64, Nothing}
+end
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -297,23 +318,21 @@ end
 # ------------------------------------------------------------------
 
 """
-    get_statistics(tdb::ThermoDB) -> Dict
+    get_statistics(tdb::ThermoDB) -> DatabaseStats
 
 Return summary statistics from the database.
 """
 function get_statistics(tdb::ThermoDB)
-    stats = Dict{String, Any}()
-
     row = first(SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM species"))
-    stats["total_species"] = row[1]
+    total_species = row[1]
 
     row = first(
         SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM temperature_intervals"),
     )
-    stats["total_intervals"] = row[1]
+    total_intervals = row[1]
 
     row = first(SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM coefficients"))
-    stats["total_coeff_sets"] = row[1]
+    total_coeff_sets = row[1]
 
     phases = Dict{String, Int}()
     for r in SQLite.DBInterface.execute(
@@ -322,14 +341,20 @@ function get_statistics(tdb::ThermoDB)
     )
         phases[r[1]] = r[2]
     end
-    stats["species_by_phase"] = phases
 
     row = first(
         SQLite.DBInterface.execute(tdb.db, "SELECT AVG(molecular_weight) FROM species"),
     )
-    stats["avg_molecular_weight"] = row[1]
+    avg_mw = row[1]
+    avg_mw = avg_mw === nothing || ismissing(avg_mw) ? nothing : Float64(avg_mw)
 
-    return stats
+    return DatabaseStats(
+        total_species,
+        total_intervals,
+        total_coeff_sets,
+        phases,
+        avg_mw,
+    )
 end
 
 # ------------------------------------------------------------------
@@ -613,10 +638,8 @@ function calculate_cp(coeffs::NASACoefficients, T::Float64)
            coeffs.a7 * T^4
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_cp(coeffs::Dict, T::Float64)
-    return calculate_cp(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict methods (converts to NASACoefficients)
+Base.@deprecate calculate_cp(coeffs::Dict, T::Float64) calculate_cp(NASACoefficients(coeffs), T)
 
 """
     calculate_h(coeffs::NASACoefficients, T::Float64) -> Float64
@@ -637,10 +660,8 @@ function calculate_h(coeffs::NASACoefficients, T::Float64)
            coeffs.b1 / T
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_h(coeffs::Dict, T::Float64)
-    return calculate_h(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict method (converts to NASACoefficients)
+Base.@deprecate calculate_h(coeffs::Dict, T::Float64) calculate_h(NASACoefficients(coeffs), T)
 
 """
     calculate_s(coeffs::NASACoefficients, T::Float64) -> Float64
@@ -660,15 +681,13 @@ function calculate_s(coeffs::NASACoefficients, T::Float64)
            coeffs.b2
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_s(coeffs::Dict, T::Float64)
-    return calculate_s(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict method (converts to NASACoefficients)
+Base.@deprecate calculate_s(coeffs::Dict, T::Float64) calculate_s(NASACoefficients(coeffs), T)
 
 # Export public symbols (used by parent module Glenn)
 export ThermoCalcError,
     DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
-export NASACoefficients, SpeciesInfo, IntervalData
+export NASACoefficients, SpeciesInfo, IntervalData, DatabaseStats
 export ThermoDB, R_UNIVERSAL, R_GLENN
 export get_gas_constant_ref
 

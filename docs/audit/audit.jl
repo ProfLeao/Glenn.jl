@@ -316,8 +316,8 @@ function collect_data()
         stats = Glenn.get_statistics(calc.db)
         @printf(
             "DB stats: %d species, %d intervals\n",
-            stats["total_species"],
-            stats["total_intervals"]
+            stats.total_species,
+            stats.total_intervals
         )
 
         for (py_name, plot_label) in SPECIES

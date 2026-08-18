@@ -23,6 +23,7 @@ TemperatureOutOfRangeError
 NASACoefficients
 SpeciesInfo
 IntervalData
+DatabaseStats
 Glenn.ThermoDatabase.ThermoDB
 ```
 

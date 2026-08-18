@@ -80,6 +80,7 @@ const ThermoProperties = ThermoCalculator.ThermoProperties
 const SpeciesInfo = ThermoDatabase.SpeciesInfo
 const NASACoefficients = ThermoDatabase.NASACoefficients
 const IntervalData = ThermoDatabase.IntervalData
+const DatabaseStats = ThermoDatabase.DatabaseStats
 
 # Exception types (defined in ThermoDatabase, re-exported)
 const ThermoCalcError = ThermoDatabase.ThermoCalcError
@@ -166,6 +167,7 @@ export __version__, __author__
 # Types
 export Calculator, ThermoDB, ThermoDBBuilder
 export ThermoProperties, SpeciesInfo, NASACoefficients, IntervalData
+export DatabaseStats
 export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
 export migrate_metadata!

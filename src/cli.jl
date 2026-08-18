@@ -173,12 +173,12 @@ function cmd_query(args::Dict)
         println("\n1. DATABASE STATISTICS:")
         println(repeat("-", 70))
         stats = ThermoDatabase.get_statistics(calc.db)
-        println("  Total species: $(stats["total_species"])")
-        println("  Total intervals: $(stats["total_intervals"])")
-        println("  Total coefficient sets: $(stats["total_coeff_sets"])")
-        println("  Species by phase: $(stats["species_by_phase"])")
+        println("  Total species: $(stats.total_species)")
+        println("  Total intervals: $(stats.total_intervals)")
+        println("  Total coefficient sets: $(stats.total_coeff_sets)")
+        println("  Species by phase: $(stats.species_by_phase)")
         println(
-            "  Average molecular weight: $(round(stats["avg_molecular_weight"], digits=2)) g/mol",
+            "  Average molecular weight: $(round(stats.avg_molecular_weight, digits=2)) g/mol",
         )
 
         # 2. Search

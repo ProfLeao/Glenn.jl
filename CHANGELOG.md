@@ -27,6 +27,9 @@ All notable changes to Glenn.jl are documented in this file.
   to an existing database (self-contained migration).
 - **`metadata` table** in the builder schema, storing `gas_constant_ref` and
   `gas_constant_ref_source`.
+- **`DatabaseStats`** — typed struct replacing the `Dict` returned by
+  `get_statistics` (total species/intervals/coefficients, species by phase,
+  average molecular weight).
 
 ### 🔧 Changed
 
@@ -39,6 +42,8 @@ All notable changes to Glenn.jl are documented in this file.
 - **`parse_and_load`** now reports `New species loaded` and `Already existing`
   separately, instead of a single misleading `Total species loaded: 0` when
   rebuilding into an already-populated database.
+- **`calculate_cp`/`calculate_h`/`calculate_s`** now deprecate the `Dict`
+  coefficient methods (`Base.@deprecate`) in favour of `NASACoefficients`.
 
 ### 📝 Documentation
 
@@ -51,10 +56,11 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ⚠️ Breaking Changes
 
-- **No API breakage.** `R_UNIVERSAL` remains exported; databases without the
-  `metadata` table fall back gracefully with a warning. Numerical results of
-  regenerated databases rise by ~5.7 ppm — this is a precision correction, not a
-  change of contract.
+- **`get_statistics` now returns a `DatabaseStats` struct** (instead of a `Dict`).
+  Callers using `stats["total_species"]` must switch to `stats.total_species`.
+- `R_UNIVERSAL` remains exported; databases without the `metadata` table fall
+  back gracefully with a warning. Numerical results of regenerated databases
+  rise by ~5.7 ppm — this is a precision correction, not a change of contract.
 
 ### 🙏 Acknowledgements
 
