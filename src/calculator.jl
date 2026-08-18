@@ -167,7 +167,7 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64; R::
     end
 
     interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
-    
+
     if interval_data === nothing
         throw(
             ThermoCalcError(
