@@ -74,14 +74,27 @@ function Base.showerror(io::IO, e::TemperatureOutOfRangeError)
 end
 
 # ------------------------------------------------------------------
-# Physical constant: Universal Gas Constant
+# Physical constants: Universal Gas Constant
 # ------------------------------------------------------------------
 """
     const R_UNIVERSAL
 
-Universal Gas Constant in J/(mol·K). Source: CODATA 2018.
+Universal Gas Constant in J/(mol·K). Source: CODATA 2018/2022 (full precision).
 """
-const R_UNIVERSAL = 8.314462618
+const R_UNIVERSAL = 8.31446261815324
+
+"""
+    const R_GLENN
+
+Reference gas constant in J/(mol·K) used when the bundled NASA Glenn/CEA
+polynomial coefficients were fitted (NASA TP-2002-211556, `thermo.inp` dated
+9/09/04). CODATA 1986 value.
+
+The NASA-7 polynomials are dimensionless (`Cp/R₀`, `H/R₀T`, `S/R₀`), so the
+original values are recovered by denormalising with this constant — not with
+`R_UNIVERSAL`.
+"""
+const R_GLENN = 8.314510
 
 # ------------------------------------------------------------------
 # Typed data structures
@@ -221,6 +234,62 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", tdb::ThermoDB)
     print(io, "ThermoDB(\"thermo.db\")")
+end
+
+# ------------------------------------------------------------------
+# Reference gas constant (dataset metadata)
+# ------------------------------------------------------------------
+
+"""
+    _table_exists(db::SQLite.DB, name::String) -> Bool
+
+Return `true` if a table named `name` exists in the database.
+"""
+function _table_exists(db::SQLite.DB, name::String)::Bool
+    rows = SQLite.DBInterface.execute(
+        db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (name,),
+    )
+    return !isempty(collect(rows))
+end
+
+"""
+    get_gas_constant_ref(db::SQLite.DB) -> Float64
+
+Return the reference gas constant stored in the dataset metadata, or fall back
+to `R_UNIVERSAL` for legacy databases that predate the `metadata` table.
+
+The check is explicit (no generic `try/catch`) so that connection or corruption
+errors are not silently masked.
+"""
+function get_gas_constant_ref(db::SQLite.DB)::Float64
+    if !_table_exists(db, "metadata")
+        @warn "database has no 'metadata' table; falling back to R_UNIVERSAL (CODATA 2018/2022)"
+        return R_UNIVERSAL
+    end
+
+    R_ref = nothing
+    for row in SQLite.DBInterface.execute(
+        db,
+        "SELECT value FROM metadata WHERE key='gas_constant_ref' LIMIT 1",
+    )
+        R_ref = parse(Float64, row[1])
+        break
+    end
+
+    if R_ref === nothing
+        @warn "metadata key 'gas_constant_ref' not found; falling back to R_UNIVERSAL"
+        return R_UNIVERSAL
+    end
+
+    # Sanity check: a plausible molar gas constant must lie in (8, 9) J/(mol·K).
+    if 8.0 < R_ref < 9.0
+        return R_ref
+    end
+
+    @warn "gas_constant_ref=$R_ref is implausible; falling back to R_UNIVERSAL"
+    return R_UNIVERSAL
 end
 
 # ------------------------------------------------------------------
@@ -600,6 +669,7 @@ end
 export ThermoCalcError,
     DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
 export NASACoefficients, SpeciesInfo, IntervalData
-export ThermoDB, R_UNIVERSAL
+export ThermoDB, R_UNIVERSAL, R_GLENN
+export get_gas_constant_ref
 
 end # module ThermoDatabase

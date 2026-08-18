@@ -72,6 +72,7 @@ include("cli.jl")         # Command-line interface
 
 # Constants & types
 const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
+const R_GLENN = ThermoDatabase.R_GLENN
 const Calculator = ThermoCalculator.Calculator
 const ThermoDB = ThermoDatabase.ThermoDB
 const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder
@@ -95,6 +96,7 @@ using .ThermoDatabase:
     get_species_info,
     get_species_for_temperature,
     get_statistics,
+    get_gas_constant_ref,
     calculate_cp,
     calculate_h,
     calculate_s
@@ -121,7 +123,9 @@ using .ThermoBuilder:
     read_thermo_file,
     connect,
     create_tables,
-    parse_and_load
+    parse_and_load,
+    write_metadata,
+    migrate_metadata!
 
 # CLI
 using .CLI: cli_main
@@ -162,8 +166,9 @@ export __version__, __author__
 # Types
 export Calculator, ThermoDB, ThermoDBBuilder
 export ThermoProperties, SpeciesInfo, NASACoefficients, IntervalData
-export R_UNIVERSAL
+export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
+export migrate_metadata!
 
 # Exception types
 export ThermoCalcError,
@@ -177,6 +182,7 @@ export find_species,
     get_species_info,
     get_species_for_temperature,
     get_statistics,
+    get_gas_constant_ref,
     calculate_cp,
     calculate_h,
     calculate_s

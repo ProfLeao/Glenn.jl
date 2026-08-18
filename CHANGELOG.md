@@ -4,6 +4,53 @@ All notable changes to Glenn.jl are documented in this file.
 
 ---
 
+## [0.4.0] — Unreleased
+
+### 🐛 Fixed
+
+- **Incorrect reference gas constant in property denormalisation.**
+  The bundled NASA Glenn/CEA polynomials (`thermo.inp` dated 9/09/04) are
+  dimensionless (`Cp/R₀`, `H/R₀T`, `S/R₀`) and were fitted with the CODATA 1986
+  gas constant **R₀ = 8.314510 J/(mol·K)** (NASA TP-2002-211556). The runtime
+  previously denormalised them with `R_UNIVERSAL = 8.314462618` (CODATA 2018),
+  producing a systematic **−5.7 ppm** bias relative to the original NASA CEA
+  values. Results are now denormalised with the dataset reference constant.
+
+### ✨ Added
+
+- **`R_GLENN = 8.314510`** — reference gas constant of the bundled NASA Glenn/CEA
+  dataset (CODATA 1986).
+- **`get_gas_constant_ref(db)`** — reads the dataset reference constant from the
+  SQLite `metadata` table, with explicit fallback to `R_UNIVERSAL` for legacy
+  databases.
+- **`migrate_metadata!(db)`** — adds the `metadata` table and `gas_constant_ref`
+  to an existing database (self-contained migration).
+- **`metadata` table** in the builder schema, storing `gas_constant_ref` and
+  `gas_constant_ref_source`.
+
+### 🔧 Changed
+
+- **`R_UNIVERSAL`** now uses full CODATA 2018/2022 precision
+  (`8.31446261815324` instead of the truncated `8.314462618`).
+- **`Calculator`** now stores a `R_ref` field read from the dataset, and uses it
+  (instead of `R_UNIVERSAL`) for all Cp/H/S denormalisation — scalar and
+  vectorised paths.
+- **`ThermoDBBuilder`** writes dataset metadata automatically during `build`.
+
+### ⚠️ Breaking Changes
+
+- **No API breakage.** `R_UNIVERSAL` remains exported; databases without the
+  `metadata` table fall back gracefully with a warning. Numerical results of
+  regenerated databases rise by ~5.7 ppm — this is a precision correction, not a
+  change of contract.
+
+### 🙏 Acknowledgements
+
+- Thanks to [@longemen3000](https://github.com/longemen3000) for identifying the
+  reference gas constant inconsistency.
+
+---
+
 ## [0.3.0] — 2026-07-26
 
 ### ⚠️ Breaking Changes

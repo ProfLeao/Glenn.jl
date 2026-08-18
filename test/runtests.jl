@@ -253,6 +253,9 @@ end
         @test isdefined(Glenn, :NASACoefficients)
         @test isdefined(Glenn, :IntervalData)
         @test isdefined(Glenn, :R_UNIVERSAL)
+        @test isdefined(Glenn, :R_GLENN)
+        @test isdefined(Glenn, :get_gas_constant_ref)
+        @test isdefined(Glenn, :migrate_metadata!)
         @test isdefined(Glenn, :calculate_properties)
         @test isdefined(Glenn, :calculate_cp)
         @test isdefined(Glenn, :calculate_h)
@@ -292,9 +295,11 @@ end
     # Constants
     # ==================================================================
     @testset "Physical constants" begin
-        @test Glenn.R_UNIVERSAL ≈ 8.314462618
+        @test Glenn.R_UNIVERSAL ≈ 8.31446261815324
+        @test Glenn.R_GLENN == 8.314510
         @test 8.0 < Glenn.R_UNIVERSAL < 9.0
-        @test isapprox(Glenn.R_UNIVERSAL, 8.314462618, rtol = 1e-9)
+        @test 8.0 < Glenn.R_GLENN < 9.0
+        @test isapprox(Glenn.R_UNIVERSAL, 8.31446261815324, rtol = 1e-15)
     end
 
     # ==================================================================
@@ -307,6 +312,19 @@ end
     SQLite.close(disk_db)
 
     tdb = Glenn.ThermoDatabase.ThermoDB(db_file)
+
+    @testset "Reference gas constant" begin
+        # Legacy DB (no metadata table) → fallback to R_UNIVERSAL
+        @test Glenn.get_gas_constant_ref(tdb.db) == Glenn.R_UNIVERSAL
+
+        # Migrate: add metadata table + gas_constant_ref = R_GLENN
+        Glenn.migrate_metadata!(tdb.db)
+        @test Glenn.get_gas_constant_ref(tdb.db) ≈ 8.314510 atol = 1e-12
+
+        # Full-precision constants
+        @test Glenn.R_GLENN == 8.314510
+        @test Glenn.R_UNIVERSAL == 8.31446261815324
+    end
 
     @testset "ThermoDB - Statistics" begin
         stats = Glenn.get_statistics(tdb)

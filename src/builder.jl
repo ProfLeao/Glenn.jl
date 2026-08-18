@@ -20,6 +20,7 @@ module ThermoBuilder
 
 using SQLite
 using Logging
+using ..ThermoDatabase: R_GLENN
 
 # ------------------------------------------------------------------
 # Regex: match FORTRAN double-precision scientific notation (e.g. 1.234567890D+05)
@@ -164,6 +165,69 @@ function create_tables(builder::ThermoDBBuilder)
     )
 """,
     )
+
+    SQLite.execute(
+        conn,
+        """
+    CREATE TABLE IF NOT EXISTS metadata (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    )
+""",
+    )
+end
+
+"""
+    write_metadata(builder::ThermoDBBuilder)
+
+Write the dataset reference gas constant into the `metadata` table.
+
+The bundled NASA Glenn/CEA polynomials were fitted with `R_GLENN = 8.314510`
+(CODATA 1986, NASA TP-2002-211556). Uses `INSERT OR REPLACE` for idempotency.
+"""
+function write_metadata(builder::ThermoDBBuilder)
+    conn = builder.conn
+    @assert conn !== nothing "Database not connected"
+
+    SQLite.execute(
+        conn,
+        """
+        INSERT OR REPLACE INTO metadata (key, value)
+        VALUES ('gas_constant_ref', ?), ('gas_constant_ref_source', ?);
+        """,
+        (string(R_GLENN), "NASA TP-2002-211556 (CODATA 1986)"),
+    )
+end
+
+"""
+    migrate_metadata!(db::SQLite.DB)
+
+Self-contained migration for legacy databases that predate the `metadata` table.
+
+Creates the table (if missing) and writes `gas_constant_ref = R_GLENN`, so that
+older databases are denormalised with the NASA Glenn reference constant instead
+of falling back to `R_UNIVERSAL`.
+"""
+function migrate_metadata!(db::SQLite.DB)
+    SQLite.execute(
+        db,
+        """
+    CREATE TABLE IF NOT EXISTS metadata (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    )
+""",
+    )
+
+    SQLite.execute(
+        db,
+        """
+        INSERT OR REPLACE INTO metadata (key, value)
+        VALUES ('gas_constant_ref', ?), ('gas_constant_ref_source', ?);
+        """,
+        (string(R_GLENN), "NASA TP-2002-211556 (CODATA 1986)"),
+    )
+    return nothing
 end
 
 # ------------------------------------------------------------------
@@ -587,6 +651,9 @@ function parse_and_load(builder::ThermoDBBuilder)
 
         # Commit the transaction
         SQLite.execute(conn, "COMMIT")
+
+        # Write dataset reference gas constant metadata (idempotent)
+        write_metadata(builder)
 
         @info repeat("=", 70)
         @info "Total species loaded: $species_count"
