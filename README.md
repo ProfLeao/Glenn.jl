@@ -191,16 +191,16 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | Function | Description |
 |---|---|
 | `ThermoDB(path)` | Raw SQLite connection |
-| `get_statistics(tdb)` | Database summary stats |
+| `get_statistics(tdb)` | Database summary stats → `DatabaseStats` |
 | `get_gas_constant_ref(db)` | Dataset reference gas constant |
 | `migrate_metadata!(db)` | Add the `metadata` table to a legacy database |
 | `find_species(tdb, name; exact_match)` | Search species by name (case-insensitive exact with `exact_match=true`) |
 | `list_species_page(tdb; page, page_size)` | Paginated species listing |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
-| `calculate_cp(coeffs, T)` | Cp/R (dimensionless) |
-| `calculate_h(coeffs, T)` | H/RT (dimensionless) |
-| `calculate_s(coeffs, T)` | S/R (dimensionless) |
+| `calculate_cp(coeffs, T)` | Cp/R (dimensionless), `coeffs::NASACoefficients` |
+| `calculate_h(coeffs, T)` | H/RT (dimensionless), `coeffs::NASACoefficients` |
+| `calculate_s(coeffs, T)` | S/R (dimensionless), `coeffs::NASACoefficients` |
 
 ### Constants
 
