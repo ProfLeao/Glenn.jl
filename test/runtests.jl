@@ -292,9 +292,9 @@ end
     # Constants
     # ==================================================================
     @testset "Physical constants" begin
-        @test Glenn.R_UNIVERSAL ≈ 8.314462618
+        @test Glenn.R_UNIVERSAL ≈ 8.31446261815324
         @test 8.0 < Glenn.R_UNIVERSAL < 9.0
-        @test isapprox(Glenn.R_UNIVERSAL, 8.314462618, rtol = 1e-9)
+        @test isapprox(Glenn.R_UNIVERSAL, 8.31446261815324, rtol = 1e-9)
     end
 
     # ==================================================================
@@ -526,6 +526,24 @@ end
                 99999,
             )
         end
+
+        @testset "Formation enthalpy consistency" begin
+            for i in 1:500
+                data = get_species_data(calc.db,i)
+                interval = data["intervals"][1]
+                Tmin,Tmax = interval.temp_min,interval.temp_max
+                !(Tmin <= 298.15 <= Tmax) && continue
+                hf_db   = data["heat_of_formation_298K"]
+                h_rt = Glenn.calculate_h(interval.coefficients,298.15)
+                hf_calc = h_rt*Glenn.R_GLENN*298.15
+                if iszero(hf_db)
+                    @test abs(h_rt) < 1e-8 # rtol = 1e-6
+                else
+                    @test hf_db ≈ hf_calc rtol = 1e-6
+                end
+            end
+        end
+
 
         @testset "Enthalpy change" begin
             delta_h = Glenn.calculate_enthalpy_change(calc, 1, 298.15, 500.0)

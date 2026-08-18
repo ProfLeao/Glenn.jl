@@ -146,17 +146,20 @@ end
 # ------------------------------------------------------------------
 
 """
-    calculate_properties(calc::Calculator, species_id::Int, T::Float64)
+    calculate_properties(calc::Calculator, species_id::Int, T::Float64; R::Real = 8.314510)
        -> ThermoProperties
 
 Calculate thermochemical properties at a given temperature.
 
 Returns a `ThermoProperties` struct with Cp, H°, S° and metadata.
 
+The `R` keyword is used to specify the molar gas constant used. 
+It defaults to the gas constant used at the time the NASA-7 polynomial coefficients were fitted (`R = 8.314510`).
+
 Throws `SpeciesNotFoundError` if the species ID is invalid.
 Throws `TemperatureOutOfRangeError` if T is outside all valid intervals.
 """
-function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
+function calculate_properties(calc::Calculator, species_id::Int, T::Float64; R::Real = ThermoDatabase.R_GLENN)
     # Lightweight lookup: only need name & phase, not all intervals/coeffs
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
@@ -164,7 +167,7 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
     end
 
     interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
-
+    
     if interval_data === nothing
         throw(
             ThermoCalcError(
@@ -177,8 +180,6 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
     cp_r = ThermoDatabase.calculate_cp(interval_data.coefficients, T)
     h_rt = ThermoDatabase.calculate_h(interval_data.coefficients, T)
     s_r = ThermoDatabase.calculate_s(interval_data.coefficients, T)
-
-    R = ThermoDatabase.R_UNIVERSAL
 
     return ThermoProperties(
         T,
@@ -194,7 +195,7 @@ end
 
 """
     calculate_properties(calc::Calculator, species_id::Int,
-                         T_range::AbstractVector{<:Real}) -> Vector{ThermoProperties}
+                         T_range::AbstractVector{<:Real};R::Real = 8.314510) -> Vector{ThermoProperties}
 
 Vectorized: calculate thermochemical properties for multiple temperatures.
 
@@ -202,13 +203,17 @@ Loads coefficients once from the database and evaluates the polynomial
 for each temperature in memory — much faster than calling the scalar
 version in a loop.
 
+The `R` keyword is used to specify the molar gas constant used. 
+It defaults to the gas constant used at the time the NASA-7 polynomial coefficients were fitted (`R = 8.314510`).
+
 Throws `SpeciesNotFoundError` if the species ID is invalid.
 Skips temperatures outside valid intervals (returns only valid results).
 """
 function calculate_properties(
     calc::Calculator,
     species_id::Int,
-    T_range::AbstractVector{<:Real},
+    T_range::AbstractVector{<:Real};
+    R::Real = ThermoDatabase.R_GLENN,
 )
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
@@ -221,7 +226,6 @@ function calculate_properties(
         throw(ThermoCalcError("Species ID $species_id has no data"))
     end
     intervals = species_data["intervals"]  # Vector{IntervalData}
-    R = ThermoDatabase.R_UNIVERSAL
 
     results = ThermoProperties[]
     sizehint!(results, length(T_range))

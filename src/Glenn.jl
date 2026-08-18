@@ -72,6 +72,7 @@ include("cli.jl")         # Command-line interface
 
 # Constants & types
 const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
+const R_GLENN = ThermoDatabase.R_GLENN
 const Calculator = ThermoCalculator.Calculator
 const ThermoDB = ThermoDatabase.ThermoDB
 const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder

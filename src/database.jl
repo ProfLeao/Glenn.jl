@@ -74,15 +74,22 @@ function Base.showerror(io::IO, e::TemperatureOutOfRangeError)
 end
 
 # ------------------------------------------------------------------
-# Physical constant: Universal Gas Constant
+# Physical constant: Current Universal Gas Constant
 # ------------------------------------------------------------------
 """
     const R_UNIVERSAL
 
-Universal Gas Constant in J/(mol·K). Source: CODATA 2018.
+Universal Gas Constant in J/(mol·K). Source: CODATA 2019.
 """
-const R_UNIVERSAL = 8.314462618
+const R_UNIVERSAL = 8.31446261815324
 
+
+"""
+    const R_GLENN
+
+Universal Gas Constant in J/(mol·K), used at the time the NASA-7 polynomial coefficients were fitted.
+"""
+const R_GLENN = 8.314510
 # ------------------------------------------------------------------
 # Typed data structures
 # ------------------------------------------------------------------
