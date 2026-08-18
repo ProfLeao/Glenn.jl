@@ -17,21 +17,34 @@
    - Uso: julia --project bin/glenn.jl query -s O2
 
 --- ANTERIORES (não implementados neste ciclo) ---
-1. get_statistics ainda retorna Dict
-2. 🟡 BREAKING CHANGE não documentado
-3. 🟡 NASACoefficients aceita Dict — camada extra
+1. get_statistics ainda retorna Dict — AINDA VÁLIDO (baixa prioridade)
+2. 🟡 BREAKING CHANGE não documentado — RESOLVIDO (moot)
+3. 🟡 NASACoefficients aceita Dict — AINDA VÁLIDO (limpeza opcional)
 
-stats = Glenn.get_statistics(tdb)
-@test stats["total_species"] == 1      # ← Dict access
+=== REVISÃO 2026-08-18 ===
 
-Você já criou SpeciesInfo como struct, mas get_statistics ainda retorna Dict{String, Any}. Criar uma DatabaseStats struct (com total_species, total_intervals, avg_molecular_weight, species_by_phase) eliminaria mais um foco de instabilidade.
+1. ✅ AINDA VÁLIDO — get_statistics ainda retorna Dict{String, Any} (database.jl:304).
+   Criar DatabaseStats struct melhoraria a consistência de tipos (já existem
+   SpeciesInfo, ThermoProperties etc.). Baixa prioridade: é função de baixa
+   frequência, fora dos hot paths.
 
-2. 🟡 BREAKING CHANGE não documentadoA mudança de return nothing para throw(ThermoCalcError(...)) é uma quebra de API — qualquer código que fazia:Código1234props = calculate_properties(calc, id, T)
-if props === nothing
-    # tratamento
-endagora precisa de try/catch. Isso merece:
-Destaque no changelog da versão 0.2.0
-Menção clara nas release notes do GitHub
+2. ❌ RESOLVIDO — A mudança de return nothing → throw(ThermoCalcError) ocorreu
+   ANTES do v0.2.0 (que é "initial release" no CHANGELOG). Não há versão lançada
+   com o comportamento antigo, portanto não é breaking change. O CHANGELOG já
+   documenta explicitamente "No breaking changes" (0.3.0) e "No API breakage"
+   (0.4.0). Item encerrado.
 
-3. 🟡 NASACoefficients aceita Dict — camada extraO teste mostra:ncoeffs = Glenn.NASACoefficients(coeffs)  # typed versionIsso é ótimo, mas significa que calculate_cp, calculate_h, calculate_s precisam ter múltiplos métodos (um para Dict, um para NASACoefficients). Para performance máxima, você pode deprecar o método com Dict e forçar o uso da struct. Pode usar Base.@deprecate para transição suave.
+3. ✅ AINDA VÁLIDO — calculate_cp/h/s mantêm métodos com Dict (database.jl:617,
+   641, 664) como backward-compat. Podem ser deprecados com Base.@deprecate
+   futuramente. Baixa prioridade: só afeta usuários de API de baixo nível.
+
+=== IMPLEMENTADO NO CICLO 0.4.0 ===
+✅ Correção da constante universal dos gases (R)
+   - R_UNIVERSAL = 8.31446261815324 (precisão total CODATA 2018/2022)
+   - R_GLENN = 8.314510 (CODATA 1986, NASA TP-2002-211556)
+   - get_gas_constant_ref(db) com fallback explícito
+   - Tabela metadata + write_metadata + migrate_metadata!
+   - Calculator.R_ref (desnormalização via constante do dataset)
+   - data/thermo.db migrado
+   - Agradecimento a @longemen3000
 
