@@ -252,7 +252,11 @@ end
         @test isdefined(Glenn, :SpeciesInfo)
         @test isdefined(Glenn, :NASACoefficients)
         @test isdefined(Glenn, :IntervalData)
+        @test isdefined(Glenn, :DatabaseStats)
         @test isdefined(Glenn, :R_UNIVERSAL)
+        @test isdefined(Glenn, :R_GLENN)
+        @test isdefined(Glenn, :get_gas_constant_ref)
+        @test isdefined(Glenn, :migrate_metadata!)
         @test isdefined(Glenn, :calculate_properties)
         @test isdefined(Glenn, :calculate_cp)
         @test isdefined(Glenn, :calculate_h)
@@ -292,9 +296,11 @@ end
     # Constants
     # ==================================================================
     @testset "Physical constants" begin
-        @test Glenn.R_UNIVERSAL ≈ 8.314462618
+        @test Glenn.R_UNIVERSAL ≈ 8.31446261815324
+        @test Glenn.R_GLENN == 8.314510
         @test 8.0 < Glenn.R_UNIVERSAL < 9.0
-        @test isapprox(Glenn.R_UNIVERSAL, 8.314462618, rtol = 1e-9)
+        @test 8.0 < Glenn.R_GLENN < 9.0
+        @test isapprox(Glenn.R_UNIVERSAL, 8.31446261815324, rtol = 1e-15)
     end
 
     # ==================================================================
@@ -308,13 +314,27 @@ end
 
     tdb = Glenn.ThermoDatabase.ThermoDB(db_file)
 
+    @testset "Reference gas constant" begin
+        # Legacy DB (no metadata table) → fallback to R_UNIVERSAL
+        @test Glenn.get_gas_constant_ref(tdb.db) == Glenn.R_UNIVERSAL
+
+        # Migrate: add metadata table + gas_constant_ref = R_GLENN
+        Glenn.migrate_metadata!(tdb.db)
+        @test Glenn.get_gas_constant_ref(tdb.db) ≈ 8.314510 atol = 1e-12
+
+        # Full-precision constants
+        @test Glenn.R_GLENN == 8.314510
+        @test Glenn.R_UNIVERSAL == 8.31446261815324
+    end
+
     @testset "ThermoDB - Statistics" begin
         stats = Glenn.get_statistics(tdb)
-        @test stats["total_species"] == 1
-        @test stats["total_intervals"] == 2
-        @test stats["total_coeff_sets"] == 2
-        @test stats["species_by_phase"]["gas"] == 1
-        @test stats["avg_molecular_weight"] ≈ 31.9988
+        @test stats isa Glenn.DatabaseStats
+        @test stats.total_species == 1
+        @test stats.total_intervals == 2
+        @test stats.total_coeff_sets == 2
+        @test stats.species_by_phase["gas"] == 1
+        @test stats.avg_molecular_weight ≈ 31.9988
     end
 
     @testset "ThermoDB - Find species" begin
@@ -436,8 +456,20 @@ end
 
         @testset "Partial coefficients" begin
             partial = Dict("a1" => 0.0, "a3" => 3.5)
-            cp_r = Glenn.calculate_cp(partial, 300.0)
+            ncoeffs_partial = Glenn.NASACoefficients(partial)
+            cp_r = Glenn.calculate_cp(ncoeffs_partial, 300.0)
             @test cp_r ≈ 3.5
+        end
+
+        @testset "Deprecated Dict methods still work" begin
+            coeffs_dict = Dict("a1" => 0.0, "a3" => 3.5)
+            # Deprecated path — emits a warning but still returns the correct value
+            cp_r = Glenn.calculate_cp(coeffs_dict, 300.0)
+            @test cp_r ≈ 3.5
+            h_rt = Glenn.calculate_h(coeffs_dict, 300.0)
+            @test isfinite(h_rt)
+            s_r = Glenn.calculate_s(coeffs_dict, 300.0)
+            @test isfinite(s_r)
         end
 
         @testset "Polynomial thermodynamic consistency" begin
@@ -723,8 +755,8 @@ end
             # Verify data
             tdb = Glenn.ThermoDB(db_path)
             stats = Glenn.get_statistics(tdb)
-            @test stats["total_species"] == 1
-            @test stats["total_intervals"] >= 1
+            @test stats.total_species == 1
+            @test stats.total_intervals >= 1
             Glenn.ThermoDatabase.close(tdb)
         finally
             rm(inp_path, force = true)

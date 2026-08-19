@@ -72,13 +72,14 @@ end
     Calculator
 
 High-level interface for calculating thermochemical properties.
-Wraps a `ThermoDB` connection.
+Wraps a `ThermoDB` connection and the dataset reference gas constant.
 
 Call without arguments to use the bundled `thermo.db`:
 calc = Calculator()
 """
 mutable struct Calculator
     db::ThermoDatabase.ThermoDB
+    R_ref::Float64
 end
 
 """
@@ -86,10 +87,14 @@ end
 
 Create a Calculator connected to a thermo.db database.
 Defaults to the bundled database shipped with the package.
+
+The reference gas constant `R_ref` is read from the dataset `metadata` table
+so that dimensionless NASA-7 coefficients are denormalised with the same
+constant used in the original fit.
 """
 function Calculator(path::String = default_db_path())
     db = ThermoDatabase.ThermoDB(path)
-    return Calculator(db)
+    return Calculator(db, ThermoDatabase.get_gas_constant_ref(db.db))
 end
 
 """
@@ -178,7 +183,7 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
     h_rt = ThermoDatabase.calculate_h(interval_data.coefficients, T)
     s_r = ThermoDatabase.calculate_s(interval_data.coefficients, T)
 
-    R = ThermoDatabase.R_UNIVERSAL
+    R = calc.R_ref   # dataset reference gas constant, not the system universal one
 
     return ThermoProperties(
         T,
@@ -221,7 +226,7 @@ function calculate_properties(
         throw(ThermoCalcError("Species ID $species_id has no data"))
     end
     intervals = species_data["intervals"]  # Vector{IntervalData}
-    R = ThermoDatabase.R_UNIVERSAL
+    R = calc.R_ref   # dataset reference gas constant
 
     results = ThermoProperties[]
     sizehint!(results, length(T_range))

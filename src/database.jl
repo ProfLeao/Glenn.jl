@@ -74,14 +74,27 @@ function Base.showerror(io::IO, e::TemperatureOutOfRangeError)
 end
 
 # ------------------------------------------------------------------
-# Physical constant: Universal Gas Constant
+# Physical constants: Universal Gas Constant
 # ------------------------------------------------------------------
 """
     const R_UNIVERSAL
 
-Universal Gas Constant in J/(mol·K). Source: CODATA 2018.
+Universal Gas Constant in J/(mol·K). Source: CODATA 2018/2022 (full precision).
 """
-const R_UNIVERSAL = 8.314462618
+const R_UNIVERSAL = 8.31446261815324
+
+"""
+    const R_GLENN
+
+Reference gas constant in J/(mol·K) used when the bundled NASA Glenn/CEA
+polynomial coefficients were fitted (NASA TP-2002-211556, `thermo.inp` dated
+9/09/04). CODATA 1986 value.
+
+The NASA-7 polynomials are dimensionless (`Cp/R₀`, `H/R₀T`, `S/R₀`), so the
+original values are recovered by denormalising with this constant — not with
+`R_UNIVERSAL`.
+"""
+const R_GLENN = 8.314510
 
 # ------------------------------------------------------------------
 # Typed data structures
@@ -154,6 +167,27 @@ struct IntervalData
     coefficients::NASACoefficients
 end
 
+"""
+    DatabaseStats
+
+Immutable struct holding database summary statistics.
+
+# Fields
+
+  - `total_species::Int`            : Number of chemical species
+  - `total_intervals::Int`          : Number of temperature intervals
+  - `total_coeff_sets::Int`         : Number of coefficient sets
+  - `species_by_phase::Dict`        : Species count grouped by phase
+  - `avg_molecular_weight::Union`   : Mean molecular weight (g/mol), or `nothing`
+"""
+struct DatabaseStats
+    total_species::Int
+    total_intervals::Int
+    total_coeff_sets::Int
+    species_by_phase::Dict{String, Int}
+    avg_molecular_weight::Union{Float64, Nothing}
+end
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -224,27 +258,81 @@ function Base.show(io::IO, ::MIME"text/plain", tdb::ThermoDB)
 end
 
 # ------------------------------------------------------------------
+# Reference gas constant (dataset metadata)
+# ------------------------------------------------------------------
+
+"""
+    _table_exists(db::SQLite.DB, name::String) -> Bool
+
+Return `true` if a table named `name` exists in the database.
+"""
+function _table_exists(db::SQLite.DB, name::String)::Bool
+    rows = SQLite.DBInterface.execute(
+        db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (name,),
+    )
+    return !isempty(collect(rows))
+end
+
+"""
+    get_gas_constant_ref(db::SQLite.DB) -> Float64
+
+Return the reference gas constant stored in the dataset metadata, or fall back
+to `R_UNIVERSAL` for legacy databases that predate the `metadata` table.
+
+The check is explicit (no generic `try/catch`) so that connection or corruption
+errors are not silently masked.
+"""
+function get_gas_constant_ref(db::SQLite.DB)::Float64
+    if !_table_exists(db, "metadata")
+        @warn "database has no 'metadata' table; falling back to R_UNIVERSAL (CODATA 2018/2022)"
+        return R_UNIVERSAL
+    end
+
+    R_ref = nothing
+    for row in SQLite.DBInterface.execute(
+        db,
+        "SELECT value FROM metadata WHERE key='gas_constant_ref' LIMIT 1",
+    )
+        R_ref = parse(Float64, row[1])
+        break
+    end
+
+    if R_ref === nothing
+        @warn "metadata key 'gas_constant_ref' not found; falling back to R_UNIVERSAL"
+        return R_UNIVERSAL
+    end
+
+    # Sanity check: a plausible molar gas constant must lie in (8, 9) J/(mol·K).
+    if 8.0 < R_ref < 9.0
+        return R_ref
+    end
+
+    @warn "gas_constant_ref=$R_ref is implausible; falling back to R_UNIVERSAL"
+    return R_UNIVERSAL
+end
+
+# ------------------------------------------------------------------
 # Statistics
 # ------------------------------------------------------------------
 
 """
-    get_statistics(tdb::ThermoDB) -> Dict
+    get_statistics(tdb::ThermoDB) -> DatabaseStats
 
 Return summary statistics from the database.
 """
 function get_statistics(tdb::ThermoDB)
-    stats = Dict{String, Any}()
-
     row = first(SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM species"))
-    stats["total_species"] = row[1]
+    total_species = row[1]
 
     row = first(
         SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM temperature_intervals"),
     )
-    stats["total_intervals"] = row[1]
+    total_intervals = row[1]
 
     row = first(SQLite.DBInterface.execute(tdb.db, "SELECT COUNT(*) FROM coefficients"))
-    stats["total_coeff_sets"] = row[1]
+    total_coeff_sets = row[1]
 
     phases = Dict{String, Int}()
     for r in SQLite.DBInterface.execute(
@@ -253,14 +341,20 @@ function get_statistics(tdb::ThermoDB)
     )
         phases[r[1]] = r[2]
     end
-    stats["species_by_phase"] = phases
 
     row = first(
         SQLite.DBInterface.execute(tdb.db, "SELECT AVG(molecular_weight) FROM species"),
     )
-    stats["avg_molecular_weight"] = row[1]
+    avg_mw = row[1]
+    avg_mw = avg_mw === nothing || ismissing(avg_mw) ? nothing : Float64(avg_mw)
 
-    return stats
+    return DatabaseStats(
+        total_species,
+        total_intervals,
+        total_coeff_sets,
+        phases,
+        avg_mw,
+    )
 end
 
 # ------------------------------------------------------------------
@@ -544,10 +638,8 @@ function calculate_cp(coeffs::NASACoefficients, T::Float64)
            coeffs.a7 * T^4
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_cp(coeffs::Dict, T::Float64)
-    return calculate_cp(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict methods (converts to NASACoefficients)
+Base.@deprecate calculate_cp(coeffs::Dict, T::Float64) calculate_cp(NASACoefficients(coeffs), T)
 
 """
     calculate_h(coeffs::NASACoefficients, T::Float64) -> Float64
@@ -568,10 +660,8 @@ function calculate_h(coeffs::NASACoefficients, T::Float64)
            coeffs.b1 / T
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_h(coeffs::Dict, T::Float64)
-    return calculate_h(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict method (converts to NASACoefficients)
+Base.@deprecate calculate_h(coeffs::Dict, T::Float64) calculate_h(NASACoefficients(coeffs), T)
 
 """
     calculate_s(coeffs::NASACoefficients, T::Float64) -> Float64
@@ -591,15 +681,14 @@ function calculate_s(coeffs::NASACoefficients, T::Float64)
            coeffs.b2
 end
 
-# Backward-compatible Dict method (converts to NASACoefficients)
-function calculate_s(coeffs::Dict, T::Float64)
-    return calculate_s(NASACoefficients(coeffs), T)
-end
+# Deprecated Dict method (converts to NASACoefficients)
+Base.@deprecate calculate_s(coeffs::Dict, T::Float64) calculate_s(NASACoefficients(coeffs), T)
 
 # Export public symbols (used by parent module Glenn)
 export ThermoCalcError,
     DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
-export NASACoefficients, SpeciesInfo, IntervalData
-export ThermoDB, R_UNIVERSAL
+export NASACoefficients, SpeciesInfo, IntervalData, DatabaseStats
+export ThermoDB, R_UNIVERSAL, R_GLENN
+export get_gas_constant_ref
 
 end # module ThermoDatabase

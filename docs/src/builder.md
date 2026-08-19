@@ -45,6 +45,8 @@ ThermoDBBuilder
 ThermoBuilder.connect
 ThermoBuilder.create_tables
 ThermoBuilder.parse_and_load
+ThermoBuilder.write_metadata
+ThermoBuilder.migrate_metadata!
 ```
 
 ## Parser Utilities

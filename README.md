@@ -191,14 +191,28 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | Function | Description |
 |---|---|
 | `ThermoDB(path)` | Raw SQLite connection |
-| `get_statistics(tdb)` | Database summary stats |
+| `get_statistics(tdb)` | Database summary stats → `DatabaseStats` |
+| `get_gas_constant_ref(db)` | Dataset reference gas constant |
+| `migrate_metadata!(db)` | Add the `metadata` table to a legacy database |
 | `find_species(tdb, name; exact_match)` | Search species by name (case-insensitive exact with `exact_match=true`) |
 | `list_species_page(tdb; page, page_size)` | Paginated species listing |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
-| `calculate_cp(coeffs, T)` | Cp/R (dimensionless) |
-| `calculate_h(coeffs, T)` | H/RT (dimensionless) |
-| `calculate_s(coeffs, T)` | S/R (dimensionless) |
+| `calculate_cp(coeffs, T)` | Cp/R (dimensionless), `coeffs::NASACoefficients` |
+| `calculate_h(coeffs, T)` | H/RT (dimensionless), `coeffs::NASACoefficients` |
+| `calculate_s(coeffs, T)` | S/R (dimensionless), `coeffs::NASACoefficients` |
+
+### Constants
+
+| Constant | Value | Description |
+|---|---|---|
+| `R_UNIVERSAL` | 8.31446261815324 | Universal gas constant, J/(mol·K) (CODATA 2018/2022) |
+| `R_GLENN` | 8.314510 | Reference gas constant of the NASA Glenn/CEA dataset, J/(mol·K) (CODATA 1986) |
+
+The NASA-7 coefficients are dimensionless (`Cp/R₀`, `H/R₀T`, `S/R₀`).
+`Calculator` reads the dataset reference constant from the `metadata` table and
+uses it to denormalise properties, ensuring consistency with the original
+NASA CEA fit.
 
 ## NASA-7 Polynomial Equations
 
@@ -227,6 +241,7 @@ from the NASA Glenn FORTRAN thermochemical tables.
 | `temperature_intervals` | 3772 | Valid T ranges per species |
 | `coefficients` | 3772 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
 | `file_metadata` | 1 | Global file metadata |
+| `metadata` | 2 | Dataset metadata (reference gas constant) |
 
 ## Documentation
 

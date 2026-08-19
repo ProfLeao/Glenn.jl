@@ -23,6 +23,7 @@ TemperatureOutOfRangeError
 NASACoefficients
 SpeciesInfo
 IntervalData
+DatabaseStats
 Glenn.ThermoDatabase.ThermoDB
 ```
 
@@ -30,6 +31,12 @@ Glenn.ThermoDatabase.ThermoDB
 
 ```@docs
 Glenn.get_statistics
+```
+
+## Reference Gas Constant
+
+```@docs
+Glenn.get_gas_constant_ref
 ```
 
 ## Species Lookup
