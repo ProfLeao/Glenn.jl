@@ -26,7 +26,7 @@ Use `get_available_species` with `exact_match=true` for case-insensitive
 exact lookup — `"O2"` returns only O₂, not Al₂O₂ or Be₃N₂.
 
 ```@repl basic_usage
-# Substring search (legacy) — shows all species containing "CH4"
+# Substring search (default) — shows all species containing "CH4"
 species = get_available_species(calc, "CH4")
 for s in species[1:min(5, end)]
     println("id=", lpad(s.id, 5), "  ", rpad(s.name, 12), " phase=", s.phase)

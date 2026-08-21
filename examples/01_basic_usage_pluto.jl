@@ -40,7 +40,7 @@ calc = Calculator()
 
 # ╔═╡ e4f5a6b7-c8d9-e0f1-a2b3-c4d5e6f7a8b9
 md"""
-### Substring search (legacy)
+### Substring search (default)
 
 Shows all species containing `"CH4"` in the name.
 """

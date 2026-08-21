@@ -31,7 +31,7 @@ println("="^60)
 # exact match — "O2" returns only O₂, not Al₂O₂ or Be₃N₂.
 calc = Calculator()
 
-# Substring search (legacy) — shows all species containing "CH4"
+# Substring search (default) — shows all species containing "CH4"
 println("Substring search 'CH4':")
 species = get_available_species(calc, "CH4")
 for s in species[1:min(5, end)]

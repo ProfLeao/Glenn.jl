@@ -277,6 +277,7 @@ end
 
 """
     get_gas_constant_ref(db::SQLite.DB) -> Float64
+    get_gas_constant_ref(tdb::ThermoDB) -> Float64
 
 Return the reference gas constant stored in the dataset metadata, or fall back
 to `R_UNIVERSAL` for legacy databases that predate the `metadata` table.
@@ -312,6 +313,8 @@ function get_gas_constant_ref(db::SQLite.DB)::Float64
     @warn "gas_constant_ref=$R_ref is implausible; falling back to R_UNIVERSAL"
     return R_UNIVERSAL
 end
+
+get_gas_constant_ref(tdb::ThermoDB)::Float64 = get_gas_constant_ref(tdb.db)
 
 # ------------------------------------------------------------------
 # Statistics

@@ -143,8 +143,8 @@ connection management.
 
 ```julia
 Calculator() do calc
-    species = get_available_species(calc, "O2")
-    props = calculate_properties(calc, species[1]["id"], 1000.0)
+    species = get_available_species(calc, "O2", exact_match = true)
+    props = calculate_properties(calc, species[1].id, 1000.0)
 end
 ```
 """

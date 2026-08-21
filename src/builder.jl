@@ -20,7 +20,7 @@ module ThermoBuilder
 
 using SQLite
 using Logging
-using ..ThermoDatabase: R_GLENN
+using ..ThermoDatabase: R_GLENN, ThermoDB
 
 # ------------------------------------------------------------------
 # Regex: match FORTRAN double-precision scientific notation (e.g. 1.234567890D+05)
@@ -201,6 +201,7 @@ end
 
 """
     migrate_metadata!(db::SQLite.DB)
+    migrate_metadata!(tdb::ThermoDB)
 
 Self-contained migration for legacy databases that predate the `metadata` table.
 
@@ -229,6 +230,8 @@ function migrate_metadata!(db::SQLite.DB)
     )
     return nothing
 end
+
+migrate_metadata!(tdb::ThermoDB) = migrate_metadata!(tdb.db)
 
 # ------------------------------------------------------------------
 # Low-level parsers
