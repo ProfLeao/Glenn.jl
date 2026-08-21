@@ -4,7 +4,7 @@ All notable changes to Glenn.jl are documented in this file.
 
 ---
 
-## [0.4.0] — Unreleased
+## [0.4.0] — 2026-08-21
 
 ### 🐛 Fixed
 
