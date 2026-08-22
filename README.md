@@ -4,11 +4,14 @@
 [![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://profleao.github.io/Glenn.jl/)
 [![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://profleao.github.io/Glenn.jl/)
 
-Computes **Cp(T)**, **H°(T)**, **S°(T)** from NASA-7 polynomial coefficients
-stored in a SQLite database. The database is **bundled** with the package —
-`Calculator()` works out of the box with zero configuration.
+Glenn.jl computes **Cp(T)**, **H°(T)**, and **S°(T)** from NASA-7 polynomial
+coefficients stored in SQLite. The reference database is bundled with the
+package, so `Calculator()` works immediately with no configuration.
 
-## Features
+The high-level API is intended for calculations and species lookup. A separate
+builder and CLI are available when you need to create or inspect a database.
+
+## What it provides
 
 - **Zero-config**: `Calculator()` uses the bundled `thermo.db` — no setup needed
 - **Context manager**: Automatic connection management with `do`-block syntax
@@ -39,62 +42,30 @@ cd Glenn.jl
 julia --project -e 'import Pkg; Pkg.instantiate()'
 ```
 
+**Requirements:** Julia 1.6 or later. SQLite.jl is installed automatically by
+the Julia package manager.
+
 ## Quick Start
 
-### Basic usage
-
-The database ships **inside the package** — `Calculator()` works immediately
-with zero configuration. All properties are returned in SI units
-(Cp, S° → J/(mol·K); H° → J/mol).
+Use the `do`-block form to manage the database connection automatically. All
+properties are returned in SI units: Cp and S° in J/(mol·K), and H° in J/mol.
 
 ```julia
 using Glenn
 
-# No setup needed — uses the bundled thermo.db
-calc = Calculator()
-
-# exact_match=true: case-insensitive exact lookup
-# "O2" returns only O₂, not Al₂O₂ or Be₃N₂
-o2 = only(get_available_species(calc, "O2", exact_match = true))
-
-# Single-point calculation at 1000 K
-props = calculate_properties(calc, o2.id, 1000.0)
-println("Species:  ", props.species_name, " (", props.phase, ")")
-println("T       = ", props.temperature, " K")
-println("Cp      = ", round(props.cp, digits = 2), " J/(mol·K)")
-println("H°      = ", round(props.h_relative, digits = 1), " J/mol")
-println("S°      = ", round(props.s, digits = 3), " J/(mol·K)")
-
-# Enthalpy of formation
-hf = calculate_formation_enthalpy(calc, o2.id)   # J/mol
-
-# Enthalpy change between two temperatures
-dh = calculate_enthalpy_change(calc, o2.id, 300.0, 1500.0)
-
-# Properties over a temperature range (vectorized — fast)
-results = get_properties_range(calc, o2.id, 300:50:2000)
-
-close(calc)
-```
-
-### Context manager (`do`-block)
-
-Use the `do`-block syntax for **automatic connection management** — the database
-is opened before the block and closed after, even if an exception occurs.
-
-```julia
-using Glenn
-
-# Recommended pattern: no manual connect/close needed
 Calculator() do calc
-    ch4 = only(get_available_species(calc, "CH4", exact_match = true))
-    props = calculate_properties(calc, ch4.id, 500.0)
-    println("Cp(CH₄, 500 K) = ", round(props.cp, digits = 2), " J/(mol·K)")
+    o2 = only(get_available_species(calc, "O2", exact_match = true))
+    props = calculate_properties(calc, o2.id, 1000.0)
+    println("Cp(O2, 1000 K) = ", round(props.cp, digits = 2), " J/(mol·K)")
+    println("H(O2, 1000 K) = ", round(props.h_relative, digits = 1), " J/mol")
+    println("S(O2, 1000 K) = ", round(props.s, digits = 3), " J/(mol·K)")
 end
-# Database is automatically closed here
 ```
 
-You can also point to a custom database:
+`exact_match=true` performs a case-insensitive exact lookup. Without it, the
+default is a case-insensitive substring search.
+
+For a custom database, pass its path to `Calculator`:
 
 ```julia
 Calculator("path/to/custom.db") do calc
@@ -102,7 +73,19 @@ Calculator("path/to/custom.db") do calc
 end
 ```
 
-### Building the database
+### Additional calculations
+
+```julia
+Calculator() do calc
+    ch4 = only(get_available_species(calc, "CH4", exact_match = true))
+
+    hf = calculate_formation_enthalpy(calc, ch4.id)       # J/mol
+    dh = calculate_enthalpy_change(calc, ch4.id, 300.0, 1500.0)
+    results = get_properties_range(calc, ch4.id, 300:50:2000)
+end
+```
+
+### Building a database
 
 > **⚠️ You do NOT need to build the database for normal use.**
 > The package ships with a pre-built `thermo.db` containing ~2030 species
@@ -122,15 +105,18 @@ using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
 builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-ThermoBuilder.connect(builder)
-ThermoBuilder.create_tables(builder)
-ThermoBuilder.parse_and_load(builder)
-ThermoBuilder.close(builder)
+connect(builder)
+create_tables(builder)
+parse_and_load(builder)
+close(builder)
 
 # Build from a custom FORTRAN file
 builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-# ... same connect → create → parse → close cycle
+# ... same connect -> create_tables -> parse_and_load -> close cycle
 ```
+
+The builder is only needed for a custom or regenerated dataset. The bundled
+database should be used for normal calculations.
 
 ### CLI
 
@@ -150,7 +136,7 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- build
 julia --project bin/glenn.jl build -i custom.inp -o custom.db
 ```
 
-### NIST-JANAF Cross-Validation
+### Validation
 
 Run the cross-validation audit to compare Glenn.jl against NIST-JANAF reference data:
 
@@ -181,10 +167,10 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | Function | Description |
 |---|---|
 | `ThermoDBBuilder(inp, db)` | Create a database builder |
-| `ThermoBuilder.connect(builder)` | Open the SQLite database |
-| `ThermoBuilder.create_tables(builder)` | Create normalized schema |
-| `ThermoBuilder.parse_and_load(builder)` | Parse thermo.inp and populate DB |
-| `ThermoBuilder.close(builder)` | Close and commit |
+| `connect(builder)` | Open the SQLite database |
+| `create_tables(builder)` | Create normalized schema |
+| `parse_and_load(builder)` | Parse thermo.inp and populate DB |
+| `close(builder)` | Close and commit |
 
 ### ThermoDatabase (low-level)
 

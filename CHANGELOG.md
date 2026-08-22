@@ -16,6 +16,10 @@ All notable changes to Glenn.jl are documented in this file.
 - Corrected misleading "legacy" comments in `01_basic_usage.jl` and `basic_usage.md` regarding substring searches.
 - Documented a previously missing breaking change note for v0.2.0 (introduction of `ThermoCalcError`).
 
+### ⚠️ Breaking Changes
+
+- No breaking changes in v0.4.1.
+
 ---
 
 ## [0.4.0] — 2026-08-21
