@@ -4,6 +4,20 @@ All notable changes to Glenn.jl are documented in this file.
 
 ---
 
+## [0.4.1] — 2026-08-22
+
+### ✨ Added
+
+- **Wrapper methods:** Added `get_gas_constant_ref(tdb::ThermoDB)` and `migrate_metadata!(tdb::ThermoDB)` to allow passing the high-level `ThermoDB` struct directly, ensuring API consistency.
+
+### 🐛 Fixed
+
+- Fixed a `MethodError` in the `Calculator` context manager docstring by replacing dictionary access with struct property access (`species[1].id`).
+- Corrected misleading "legacy" comments in `01_basic_usage.jl` and `basic_usage.md` regarding substring searches.
+- Documented a previously missing breaking change note for v0.2.0 (introduction of `ThermoCalcError`).
+
+---
+
 ## [0.4.0] — 2026-08-21
 
 ### 🐛 Fixed
