@@ -25,18 +25,22 @@ using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
 builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-ThermoBuilder.connect(builder)
-ThermoBuilder.create_tables(builder)
-ThermoBuilder.parse_and_load(builder)
-ThermoBuilder.close(builder)
+connect(builder)
+create_tables(builder)
+parse_and_load(builder)
+close(builder)
 
 # Or use a custom thermo.inp
 builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-ThermoBuilder.connect(builder)
-ThermoBuilder.create_tables(builder)
-ThermoBuilder.parse_and_load(builder)
-ThermoBuilder.close(builder)
+connect(builder)
+create_tables(builder)
+parse_and_load(builder)
+close(builder)
 ```
+
+`parse_and_load` also writes the dataset reference gas constant to the
+`metadata` table. For a legacy database, use `migrate_metadata!` to create the
+table and add the same metadata without rebuilding the dataset.
 
 ## API Reference
 

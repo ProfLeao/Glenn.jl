@@ -2,7 +2,7 @@
 
 This folder contains scripts and **Pluto.jl notebooks** demonstrating how to use the **Glenn.jl** library for thermochemical property calculations ($C_p(T)$, $H^\circ(T)$, $S^\circ(T)$) from NASA polynomial coefficients.
 
-The scripts are mirrored as tutorial pages rendered in the [Documenter.jl documentation](https://profl.github.io/Glenn.jl/dev/).
+The core scripts are mirrored as tutorial pages rendered in the [Documenter.jl documentation](https://profleao.github.io/Glenn.jl/).
 
 ## How to run
 
@@ -17,8 +17,8 @@ julia --project examples/01_basic_usage.jl
 julia --project examples/02_fuel_comparison.jl
 
 # 3. Or open the Pluto notebooks (interactive)
-julia --project -e 'using Pluto; Pluto.run(notebook="examples/01_basic_usage.jl")'
-julia --project -e 'using Pluto; Pluto.run(notebook="examples/02_fuel_comparison.jl")'
+julia --project -e 'using Pluto; Pluto.run(notebook="examples/01_basic_usage_pluto.jl")'
+julia --project -e 'using Pluto; Pluto.run(notebook="examples/02_fuel_comparison_pluto.jl")'
 ```
 
 > **Note:** `02_fuel_comparison.jl` requires `Plots.jl`. Pluto notebooks require `Pluto.jl`.
@@ -39,14 +39,11 @@ with Pluto for an interactive experience:
 
 | File | Description |
 |------|-------------|
-| `01_basic_usage.jl` | Interactive version of the basic usage tutorial |
-| `02_fuel_comparison.jl` | Interactive fuel comparison with live plots |
+| [`01_basic_usage_pluto.jl`](01_basic_usage_pluto.jl) | Interactive version of the basic usage tutorial |
+| [`02_fuel_comparison_pluto.jl`](02_fuel_comparison_pluto.jl) | Interactive fuel comparison with live plots |
 
-### Additional examples
+### Extra examples
 
-Extra notebooks live in [`extra/`](extra/) — drop new `.jl` files there
-and they will appear in the documentation on the next build.
-
-### Additional examples
-
-Extra scripts live in [`extra/`](extra/) — drop new `.jl` files there.
+Extra scripts live in [`extra/`](extra/). They are not included in the
+Documenter navigation automatically; add a page to `docs/make.jl` if an extra
+example should be published in the documentation.
