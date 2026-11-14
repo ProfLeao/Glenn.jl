@@ -28,6 +28,7 @@ makedocs(
             "Basic Usage" => "examples/basic_usage.md",
             "Fuel Comparison" => "examples/fuel_comparison.md",
         ],
+        "Migrating to 0.5.0" => "migration.md",
     ],
     warnonly = [:missing_docs, :cross_references],
 )

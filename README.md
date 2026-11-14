@@ -234,6 +234,21 @@ from the NASA Glenn FORTRAN thermochemical tables.
 | `file_metadata` | 1 | Global file metadata |
 | `metadata` | 2 | Dataset metadata (reference gas constant) |
 
+## Migrating from 0.4.x
+
+Version 0.5.0 fixes the bundled dataset and completes the reference API. Three
+things need attention:
+
+- **`get_species_data` returns a typed `SpeciesData`.** Indexing (`data["name"]`)
+  still works; `to_dict(data)` restores the old `Dict`.
+- **`ThermoCalcError` is now an abstract base type.** `ThermoCalcError("msg")`
+  still works and returns a `ThermoError`.
+- **Species `id` values shifted for 14 species.** Persist names, not IDs, and
+  resolve them with `get_available_species(..., exact_match=true)`.
+
+See the [migration guide](https://profleao.github.io/Glenn.jl/migration/) for
+before/after examples and a post-upgrade check script.
+
 ## Documentation
 
 Full documentation is available at [profleao.github.io/Glenn.jl/](https://profleao.github.io/Glenn.jl/).

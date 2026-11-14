@@ -74,7 +74,15 @@ All notable changes to Glenn.jl are documented in this file.
 - `get_species_data` returns `SpeciesData` instead of `Dict`. `data["name"]`
   keeps working; code relying on other `Dict` operations (`haskey`, `get`,
   iteration) should use fields or `to_dict(data)`.
-- `ThermoCalcError` is now an abstract type (still `<: Exception`).
+- `ThermoCalcError` is now an abstract type (still `<: Exception`). The
+  historical `ThermoCalcError("msg")` constructor still works and returns a
+  `ThermoError`.
+- **Species `id` values are not stable across dataset rebuilds.** Because three
+  bogus entries were removed and eight species added, 14 species changed ID
+  (e.g. `C6H14(L),n-hexa` 2016 → 2018). Look species up by name instead of
+  persisting numeric IDs.
+- The migration guide (`docs/src/migration.md`) documents every change with
+  before/after examples and a post-upgrade check script.
 
 ---
 
