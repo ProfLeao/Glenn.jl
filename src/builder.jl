@@ -419,6 +419,88 @@ function is_coefficient_line(line::AbstractString)
     return occursin(_FORTRAN_D_RE, line)
 end
 
+"""
+    is_species_header(line::AbstractString) -> Bool
+
+Return whether a line can be a species-identification record (RECORD 1).
+
+A coefficient line can fit entirely inside the fixed-width species-name field,
+so it must be rejected explicitly instead of relying on whitespace in the
+apparent name.
+"""
+function is_species_header(line::AbstractString)
+    name, _ = parse_species_record(line)
+    return !isempty(name) &&
+           length(split(name)) == 1 &&
+           !is_temperature_line(line) &&
+           !is_coefficient_line(line)
+end
+
+"""
+    _has_finite_coefficients(coeffs::Dict{String, Any}) -> Bool
+
+Return whether a parsed NASA-7 coefficient set is complete (all values present
+and finite).
+"""
+function _has_finite_coefficients(coeffs::Dict{String, Any})
+    isempty(coeffs) && return false
+    for value in values(coeffs)
+        (value isa Real && isfinite(value)) || return false
+    end
+    return true
+end
+
+"""
+    _parse_intervals(lines, start, num_intervals) -> Union{Tuple, Nothing}
+
+Parse a complete set of interval records without modifying the database.
+
+Returning `nothing` lets the caller resynchronise at a later verified species
+header, so a malformed block can neither create a partial species nor turn
+coefficient lines into new species.
+"""
+function _parse_intervals(lines::Vector{String}, start::Int, num_intervals::Int)
+    intervals = Tuple{Dict{String, Any}, Dict{String, Any}}[]
+    index = start
+
+    for _ = 1:num_intervals
+        if index + 2 > length(lines)
+            @warn "Incomplete interval records at line $index"
+            return nothing
+        end
+        if !is_temperature_line(lines[index])
+            @warn "Invalid temperature interval record at line $index"
+            return nothing
+        end
+
+        interval = parse_temp_interval_record(lines[index])
+        coeff_lines = lines[(index + 1):(index + 2)]
+        if !all(is_coefficient_line, coeff_lines)
+            @warn "Invalid coefficient records at line $(index + 1)"
+            return nothing
+        end
+
+        coeffs = parse_coefficients_record(coeff_lines)
+        temp_min = get(interval, "temp_min", nothing)
+        temp_max = get(interval, "temp_max", nothing)
+
+        if temp_min === nothing ||
+           temp_max === nothing ||
+           !isfinite(temp_min) ||
+           !isfinite(temp_max) ||
+           temp_min >= temp_max ||
+           !_has_finite_coefficients(coeffs)
+            @warn "Invalid interval values at line $index"
+            return nothing
+        end
+
+        push!(intervals, (interval, coeffs))
+        index += 3
+    end
+
+    return intervals, index
+end
+
 # ------------------------------------------------------------------
 # Main parse & load
 # ------------------------------------------------------------------
@@ -475,176 +557,132 @@ function parse_and_load(builder::ThermoDBBuilder)
         end
 
         # --- Species loop ---
-        i = 3  # 1-based index (skip THERMO header + metadata)
         species_count = 0
         existing_count = 0
         skipped = 0
+        i = 3  # 1-based index (skip THERMO header + metadata)
 
         while i <= length(lines)
+            # Advance until a verified species header (RECORD 1).
+            if !is_species_header(lines[i]) || i + 1 > length(lines)
+                i += 1
+                continue
+            end
+
+            species_name, comments = parse_species_record(lines[i])
+            general_info = parse_general_info_record(lines[i+1])
+            num_intervals = get(general_info, "num_intervals", 0)
+
+            if !(num_intervals isa Integer) || num_intervals <= 0
+                i += 1
+                continue
+            end
+
+            parsed = _parse_intervals(lines, i + 2, num_intervals)
+            if parsed === nothing
+                @warn "Skipping malformed species block at line $i: $species_name"
+                skipped += 1
+                i += 1  # resynchronise at the next verified species header
+                continue
+            end
+
+            intervals, next_index = parsed
+
+            # Insert the species only after every interval has been validated,
+            # so a malformed block leaves no partial species behind.
+            species_id = nothing
+            inserted = false
             try
-                # RECORD 1 – species name
-                if i > length(lines)
-                    break
-                end
-
-                species_name, comments = parse_species_record(lines[i])
-
-                if isempty(species_name) ||
-                   length(split(species_name)) > 1 ||
-                   is_temperature_line(lines[i])
-                    i += 1
-                    skipped += 1
-                    continue
-                end
-
-                @info "Processing species: $species_name"
-                i += 1
-
-                # RECORD 2 – general info
-                if i > length(lines)
-                    break
-                end
-                general_info = parse_general_info_record(lines[i])
-                i += 1
-
-                if get(general_info, "num_intervals", 0) <= 0
-                    skipped += 1
-                    continue
-                end
-
-                # Insert species
-                species_id = nothing
-                try
-                    SQLite.execute(
-                        conn,
-                        """
+                SQLite.execute(
+                    conn,
+                    """
        INSERT INTO species
            (name, comments, reference_code, phase,
             molecular_weight, heat_of_formation_298K,
             num_intervals)
        VALUES (?, ?, ?, ?, ?, ?, ?)
    """,
-                        (
-                            species_name,
-                            comments,
-                            get(general_info, "ref_code", nothing),
-                            get(general_info, "phase", "gas"),
-                            get(general_info, "molecular_weight", nothing),
-                            get(general_info, "heat_of_formation", nothing),
-                            get(general_info, "num_intervals", 0),
-                        ),
+                    (
+                        species_name,
+                        comments,
+                        get(general_info, "ref_code", nothing),
+                        get(general_info, "phase", "gas"),
+                        get(general_info, "molecular_weight", nothing),
+                        get(general_info, "heat_of_formation", nothing),
+                        num_intervals,
+                    ),
+                )
+                species_id = SQLite.last_insert_rowid(conn)
+                inserted = true
+            catch e
+                if e isa SQLite.SQLiteException
+                    # Species already present: reuse its id, skip intervals.
+                    for row in SQLite.DBInterface.execute(
+                        conn,
+                        "SELECT id FROM species WHERE name = ?",
+                        (species_name,),
                     )
-                    species_id = SQLite.last_insert_rowid(conn)
-                    species_count += 1
-                catch e
-                    if e isa SQLite.SQLiteException
-                        # Species might already exist, try to get its id
-                        result = SQLite.DBInterface.execute(
-                            conn,
-                            "SELECT id FROM species WHERE name = ?",
-                            (species_name,),
-                        )
-                        for row in result
-                            species_id = row[1]
-                            break
-                        end
-                        if species_id === nothing
-                            skipped += 1
-                            continue
-                        end
-                        existing_count += 1
-                    else
-                        rethrow(e)
-                    end
-                end
-
-                if species_id === nothing
-                    skipped += 1
-                    continue
-                end
-
-                # --- Temperature intervals ---
-                num_intervals = get(general_info, "num_intervals", 0)
-
-                for interval_num = 0:(num_intervals-1)
-                    if i > length(lines)
+                        species_id = row[1]
                         break
                     end
-
-                    if !is_temperature_line(lines[i])
-                        break
-                    end
-
-                    temp_interval = parse_temp_interval_record(lines[i])
-                    i += 1
-
-                    if i + 1 > length(lines)
-                        break
-                    end
-
-                    if !(is_coefficient_line(lines[i]) && is_coefficient_line(lines[i+1]))
-                        break
-                    end
-
-                    coeffs = parse_coefficients_record([lines[i], lines[i+1]])
-                    i += 2
-
-                    if get(temp_interval, "temp_min", nothing) === nothing ||
-                       get(temp_interval, "temp_max", nothing) === nothing
+                    if species_id === nothing
+                        skipped += 1
+                        i += 1
                         continue
                     end
+                    existing_count += 1
+                else
+                    rethrow(e)
+                end
+            end
 
-                    try
-                        SQLite.execute(
-                            conn,
-                            """
+            if inserted
+                for (interval_number, (interval, coeffs)) in enumerate(intervals)
+                    SQLite.execute(
+                        conn,
+                        """
            INSERT INTO temperature_intervals
                (species_id, interval_number, temp_min,
                 temp_max, h_298_to_0)
            VALUES (?, ?, ?, ?, ?)
        """,
-                            (
-                                species_id,
-                                interval_num + 1,
-                                get(temp_interval, "temp_min", nothing),
-                                get(temp_interval, "temp_max", nothing),
-                                get(temp_interval, "h_298_to_0", nothing),
-                            ),
-                        )
-                        interval_id = SQLite.last_insert_rowid(conn)
+                        (
+                            species_id,
+                            interval_number,
+                            interval["temp_min"],
+                            interval["temp_max"],
+                            get(interval, "h_298_to_0", nothing),
+                        ),
+                    )
+                    interval_id = SQLite.last_insert_rowid(conn)
 
-                        SQLite.execute(
-                            conn,
-                            """
+                    SQLite.execute(
+                        conn,
+                        """
            INSERT INTO coefficients
                (interval_id, a1, a2, a3, a4, a5,
                 a6, a7, b1, b2)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        """,
-                            (
-                                interval_id,
-                                get(coeffs, "a1", nothing),
-                                get(coeffs, "a2", nothing),
-                                get(coeffs, "a3", nothing),
-                                get(coeffs, "a4", nothing),
-                                get(coeffs, "a5", nothing),
-                                get(coeffs, "a6", nothing),
-                                get(coeffs, "a7", nothing),
-                                get(coeffs, "b1", nothing),
-                                get(coeffs, "b2", nothing),
-                            ),
-                        )
-
-                        @debug "  Interval $(interval_num + 1): $(temp_interval["temp_min"])K - $(temp_interval["temp_max"])K"
-                    catch e
-                        @warn "Error inserting interval $(interval_num + 1): $e"
-                    end
+                        (
+                            interval_id,
+                            coeffs["a1"],
+                            coeffs["a2"],
+                            coeffs["a3"],
+                            coeffs["a4"],
+                            coeffs["a5"],
+                            coeffs["a6"],
+                            coeffs["a7"],
+                            coeffs["b1"],
+                            coeffs["b2"],
+                        ),
+                    )
                 end
-
-            catch e
-                @warn "Error processing line $i: $e"
-                i += 1
+                species_count += 1
+                @debug "Loaded species: $species_name"
             end
+
+            i = next_index
         end
 
         # Final metadata update
@@ -654,16 +692,17 @@ function parse_and_load(builder::ThermoDBBuilder)
             (species_count,),
         )
 
+        # Dataset reference gas constant metadata — inside the transaction, so a
+        # failed build rolls the metadata back together with the data.
+        write_metadata(builder)
+
         # Commit the transaction
         SQLite.execute(conn, "COMMIT")
-
-        # Write dataset reference gas constant metadata (idempotent)
-        write_metadata(builder)
 
         @info repeat("=", 70)
         @info "New species loaded: $species_count"
         @info "Already existing:   $existing_count"
-        @info "Skipped lines:      $skipped"
+        @info "Malformed skipped:  $skipped"
         @info "Database: $(builder.db_file)"
 
     catch e
@@ -671,6 +710,35 @@ function parse_and_load(builder::ThermoDBBuilder)
         @error "Build failed, rolling back: $e"
         rethrow(e)
     end
+end
+
+"""
+    build_database(inp_file, db_file) -> String
+
+Build a SQLite thermochemical database from a NASA FORTRAN `thermo.inp` file.
+
+Convenience wrapper around the four-step lifecycle
+(`connect` → `create_tables` → `parse_and_load` → `close`), so the connection
+is always closed even if parsing fails. Returns the database path.
+
+# Example
+
+```julia
+using Glenn
+
+build_database(default_inp_path(), "thermo.db")
+```
+"""
+function build_database(inp_file::AbstractString, db_file::AbstractString)
+    builder = ThermoDBBuilder(inp_file, db_file)
+    try
+        connect(builder)
+        create_tables(builder)
+        parse_and_load(builder)
+    finally
+        close(builder)
+    end
+    return String(db_file)
 end
 
 end # module ThermoBuilder

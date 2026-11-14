@@ -139,10 +139,12 @@ using .ThermoBuilder:
     parse_coefficients_record,
     is_temperature_line,
     is_coefficient_line,
+    is_species_header,
     read_thermo_file,
     connect,
     create_tables,
     parse_and_load,
+    build_database,
     write_metadata,
     migrate_metadata!
 
@@ -189,7 +191,7 @@ export DatabaseStats
 export Mixture, MixedProperties
 export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
-export migrate_metadata!
+export migrate_metadata!, build_database
 
 # Exception types
 export ThermoCalcError,

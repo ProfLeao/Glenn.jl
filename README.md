@@ -24,7 +24,7 @@ builder and CLI are available when you need to create or inspect a database.
 - Build databases from NASA FORTRAN `thermo.inp` files
 - Command-line interface (`build` and `query`)
 - **NIST-JANAF cross-validation** — validated against reference data for 7 species (CO₂, N₂, CO, H₂O, O₂, NH₃, SO₂)
-- ~2030 species, 3772 temperature intervals
+- ~2035 species, 3779 temperature intervals
 - Full [Documenter.jl](https://documenter.juliadocs.org) documentation
 
 ## Installation
@@ -88,8 +88,8 @@ end
 ### Building a database
 
 > **⚠️ You do NOT need to build the database for normal use.**
-> The package ships with a pre-built `thermo.db` containing ~2030 species
-> and 3772 temperature intervals. `Calculator()` uses it automatically.
+> The package ships with a pre-built `thermo.db` containing 2035 species
+> and 3779 temperature intervals. `Calculator()` uses it automatically.
 
 You only need to rebuild the database in these situations:
 
@@ -104,19 +104,23 @@ You only need to rebuild the database in these situations:
 using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
-builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+build_database(default_inp_path(), "thermo.db")
 
 # Build from a custom FORTRAN file
-builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-# ... same connect -> create_tables -> parse_and_load -> close cycle
+build_database("my_thermo.inp", "my_thermo.db")
 ```
 
 The builder is only needed for a custom or regenerated dataset. The bundled
 database should be used for normal calculations.
+
+To regenerate the bundled database reproducibly — with integrity checks and
+release gates (expected species, intervals and coefficient sets) — use the
+rebuild script. It writes next to the target and only replaces it after every
+check passes:
+
+```bash
+julia --project=. scripts/rebuild_database.jl
+```
 
 ### CLI
 
@@ -167,9 +171,10 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | Function | Description |
 |---|---|
 | `ThermoDBBuilder(inp, db)` | Create a database builder |
-| `connect(builder)` | Open the SQLite database |
-| `create_tables(builder)` | Create normalized schema |
-| `parse_and_load(builder)` | Parse thermo.inp and populate DB |
+| `build_database(inp, db)` | Build a database in one call (recommended) |
+| `Glenn.connect(builder)` | Open the SQLite database |
+| `Glenn.create_tables(builder)` | Create normalized schema |
+| `Glenn.parse_and_load(builder)` | Parse thermo.inp and populate DB |
 | `close(builder)` | Close and commit |
 
 ### ThermoDatabase (low-level)
@@ -223,9 +228,9 @@ from the NASA Glenn FORTRAN thermochemical tables.
 
 | Table | Records | Description |
 |---|---|---|
-| `species` | 2030 | Chemical species (name, formula, phase, MW, ΔH°f) |
-| `temperature_intervals` | 3772 | Valid T ranges per species |
-| `coefficients` | 3772 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
+| `species` | 2035 | Chemical species (name, formula, phase, MW, ΔH°f) |
+| `temperature_intervals` | 3779 | Valid T ranges per species |
+| `coefficients` | 3779 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
 | `file_metadata` | 1 | Global file metadata |
 | `metadata` | 2 | Dataset metadata (reference gas constant) |
 

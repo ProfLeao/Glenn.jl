@@ -858,6 +858,10 @@ end
                 [
                     "THERMO",
                     "   300.000   1000.000   5000.000",
+                    # Stray coefficient line before any species header: the
+                    # state machine must skip it instead of creating a bogus
+                    # species named after a FORTRAN number.
+                    "-1.302004763D+06 5.407120940D+02-1.596697810D+00 1.635207120D-03",
                     rec1,
                     rec2,
                     rec3,
@@ -873,11 +877,7 @@ end
         try
             write(inp_path, inp_content)
 
-            builder = Glenn.ThermoDBBuilder(inp_path, db_path)
-            Glenn.ThermoBuilder.connect(builder)
-            Glenn.ThermoBuilder.create_tables(builder)
-            Glenn.ThermoBuilder.parse_and_load(builder)
-            Glenn.ThermoBuilder.close(builder)
+            Glenn.build_database(inp_path, db_path)
 
             @test isfile(db_path)
             @test filesize(db_path) > 0
@@ -887,11 +887,50 @@ end
             stats = Glenn.get_statistics(tdb)
             @test stats.total_species == 1
             @test stats.total_intervals >= 1
+
+            # No species name may look like a FORTRAN coefficient token.
+            @test all(
+                s -> !occursin(r"\dD[+-]\d", s.name),
+                Glenn.list_all_species(tdb),
+            )
+
+            # The dataset reference constant is written inside the transaction.
+            @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN
             Glenn.ThermoDatabase.close(tdb)
         finally
             rm(inp_path, force = true)
             rm(db_path, force = true)
         end
+    end
+
+    # ==================================================================
+    # Builder - Species header detection (v0.5.0 phase 0)
+    # ==================================================================
+    @testset "Builder - Species header detection" begin
+        # Genuine species records
+        @test Glenn.ThermoBuilder.is_species_header(
+            "O2              Ref-1 O2 gas           ",
+        )
+        @test Glenn.ThermoBuilder.is_species_header(
+            "Cr(cr)            Below lambda trans. Ref-Elm.",
+        )
+        @test Glenn.ThermoBuilder.is_species_header(
+            "C2H5OH(L)         Gurvich,1989 pt1 p210 pt2 p201.",
+        )
+
+        # Coefficient lines fit inside the species-name field and were
+        # historically misparsed as species headers.
+        stray = "-1.302004763D+06 5.407120940D+02-1.596697810D+00"
+        @test Glenn.ThermoBuilder.is_coefficient_line(stray)
+        @test !Glenn.ThermoBuilder.is_species_header(stray)
+        @test !Glenn.ThermoBuilder.is_species_header(" 3.21225000D+00 1.12749000D-03")
+
+        # Temperature records are not species headers.
+        @test !Glenn.ThermoBuilder.is_species_header(" 2.0000E+02 1.0000E+03")
+
+        # Blank / multi-token names are rejected.
+        @test !Glenn.ThermoBuilder.is_species_header("")
+        @test !Glenn.ThermoBuilder.is_species_header("TOO  MANY TOKENS HERE")
     end
 
     # ==================================================================
@@ -919,6 +958,36 @@ end
             end
             @test true  # No crash = pass
         end
+    end
+
+    # ==================================================================
+    # Bundled database (dataset release gates)
+    # ==================================================================
+    @testset "Bundled database" begin
+        db = Glenn.default_db_path()
+        @test isfile(db)
+
+        tdb = Glenn.ThermoDB(db)
+        stats = Glenn.get_statistics(tdb)
+
+        # Release gates for the canonical NASA Glenn/CEA dataset — keep in sync
+        # with scripts/rebuild_database.jl.
+        @test stats.total_species == 2035
+        @test stats.total_intervals == 3779
+        @test stats.total_coeff_sets == 3779
+
+        # The parser must never store FORTRAN tokens as species names.
+        names = [s.name for s in Glenn.list_all_species(tdb)]
+        @test isempty(filter(n -> occursin(r"\dD[+-]\d", n), names))
+
+        # Species recovered once the parser resynchronised correctly.
+        for name in ("C2H5OH(L)", "C6H6(L)", "CLO3F", "H2O2(L)", "JP-10(g)")
+            @test !isempty(Glenn.find_species(tdb, name; exact_match = true))
+        end
+
+        # Dataset reference constant survives a rebuild.
+        @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN
+        Glenn.ThermoDatabase.close(tdb)
     end
 
     # ==================================================================

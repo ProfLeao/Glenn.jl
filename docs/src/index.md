@@ -49,9 +49,9 @@ All results are returned in SI units:
 
 | Table | Description | Records |
 |---|---|---|
-| `species` | Chemical species | 2030 |
-| `temperature_intervals` | Valid T ranges per species | 3772 |
-| `coefficients` | NASA-7 polynomial coefficients (a1–a7, b1, b2) | 3772 sets |
+| `species` | Chemical species | 2035 |
+| `temperature_intervals` | Valid T ranges per species | 3779 |
+| `coefficients` | NASA-7 polynomial coefficients (a1–a7, b1, b2) | 3779 sets |
 | `file_metadata` | Global file metadata | 1 |
 | `metadata` | Dataset metadata (reference gas constant) | 2 |
 

@@ -24,19 +24,16 @@ Records 3–5 repeat for each temperature interval.
 using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
-builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+build_database(default_inp_path(), "thermo.db")
 
 # Or use a custom thermo.inp
-builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+build_database("my_thermo.inp", "my_thermo.db")
 ```
+
+`build_database` wraps the full lifecycle (`connect` → `create_tables` →
+`parse_and_load` → `close`) and always closes the connection, even when parsing
+fails. The individual steps remain available as `Glenn.connect`,
+`Glenn.create_tables` and `Glenn.parse_and_load` when finer control is needed.
 
 `parse_and_load` also writes the dataset reference gas constant to the
 `metadata` table. For a legacy database, use `migrate_metadata!` to create the
@@ -46,6 +43,7 @@ table and add the same metadata without rebuilding the dataset.
 
 ```@docs
 ThermoDBBuilder
+Glenn.build_database
 ThermoBuilder.connect
 ThermoBuilder.create_tables
 ThermoBuilder.parse_and_load

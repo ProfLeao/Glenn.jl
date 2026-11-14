@@ -6,6 +6,32 @@ All notable changes to Glenn.jl are documented in this file.
 
 ## [Unreleased] — 0.5.0
 
+### 🐛 Fixed
+
+- **Dataset reconciliation.** The bundled `thermo.db` was rebuilt with a
+  state-machine parser. The previous parser desynchronised on malformed blocks,
+  which stored three FORTRAN coefficient lines as "species"
+  (`-1.302004763D+06`, `-7.310769440D+05`, `4.461077310D+04`) and silently
+  dropped eight genuine species. The dataset now matches the reference
+  implementation at **2035 species / 3779 intervals** (previously 2030 / 3772),
+  and every previously present species keeps identical coefficients.
+- **`parse_and_load` no longer creates partial species.** Every declared
+  interval is validated before the species row is inserted, and malformed blocks
+  are skipped by resynchronising at the next verified species header.
+- **Builder examples in the README and manual** called `connect` /
+  `create_tables` / `parse_and_load` without qualification; those functions are
+  not exported. The examples now use `build_database`, and the low-level steps
+  are shown as `Glenn.connect` etc.
+
+### ✨ Added
+
+- **`build_database(inp, db)`** — one-call database build that always closes the
+  connection, even when parsing fails.
+- **`scripts/rebuild_database.jl`** — reproducible, atomic dataset rebuild:
+  builds next to the target, runs integrity checks and release gates
+  (expected species/intervals/coefficient sets), and only then replaces the
+  bundled database.
+
 ### ✨ Added
 
 - **`SpeciesData`** — typed record returned by `get_species_data` (identification
