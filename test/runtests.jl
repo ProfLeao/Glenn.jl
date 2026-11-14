@@ -210,26 +210,41 @@ end
 """
     make_thermo_inp(records) -> String
 
-Build a minimal FORTRAN `thermo.inp` from `(name, tmin, tmax)` records, one
-temperature interval each. Allows several records to reuse the same species
-name, which is how `thermo.inp` encodes phase transitions.
+Build a minimal FORTRAN `thermo.inp` from `(name, tmin, tmax[, mw[, phase]])`
+records, one temperature interval each. Allows several records to reuse the same
+species name, which is how `thermo.inp` encodes phase transitions.
+
+Fixed-width columns follow NASA FORTRAN Appendix C:
+
+* RECORD 1 — name (1–16), comments (19–80)
+* RECORD 2 — intervals (1–2), ref code (4–9), phase (51–52), MW (53–65), ΔH°f (66–80)
+* RECORD 3 — T_min (1–11), T_max (12–22), h_298→0 (66–80)
+* RECORDS 4–5 — coefficients in 16-character fields
 """
 function make_thermo_inp(records)
     coeffs_a = ["1.0D+00", "0.0D+00", "3.5D+00", "0.0D+00", "0.0D+00"]
     coeffs_b = ["0.0D+00", "0.0D+00", "0.00000000D+00", "1.0D+02", "2.0D+01"]
 
     lines = String["THERMO", "   300.000   1000.000   5000.000"]
-    for (name, tmin, tmax) in records
+    for rec in records
+        name, tmin, tmax = rec[1], rec[2], rec[3]
+        mw = length(rec) >= 4 ? rec[4] : "31.9988"
+        phase_code = length(rec) >= 5 ? rec[5] : " 0"
+
+        # RECORD 1 — name (1-16) and comments (19-80)
         push!(lines, rpad(name, 16) * "  " * rpad("Test species", 62))
 
+        # RECORD 2 — ref code (4-9), phase (51-52), MW (53-65), ΔH°f (66-80)
         rec2 =
-            " 1" * " " * rpad("g 2/99", 43) * " 0" * rpad("31.9988", 14) * rpad("0.0", 15)
-        push!(lines, rpad(rec2[1:min(end, 80)], 80))
+            " 1" * " " * rpad("g 2/99", 6) * rpad("", 41) *
+            phase_code * rpad(mw, 13) * rpad("0.0", 15)
+        push!(lines, rpad(rec2, 80))
 
-        rec3 =
-            rpad(tmin, 11) * rpad(tmax, 11) * rpad("", 44) * rpad("8680.0", 15)
-        push!(lines, rpad(rec3[1:min(end, 80)], 80))
+        # RECORD 3 — T_min (1-11), T_max (12-22), h_298→0 (66-80)
+        rec3 = rpad(tmin, 11) * rpad(tmax, 11) * rpad("", 43) * rpad("8680.0", 15)
+        push!(lines, rpad(rec3, 80))
 
+        # RECORDS 4-5 — a1..a5 and a6, a7, -, b1, b2
         push!(lines, join(lpad.(coeffs_a, 16)))
         push!(lines, join(lpad.(coeffs_b, 16)))
     end
@@ -754,6 +769,182 @@ end
         end
 
         @test connected_in_block
+    end
+
+    # ==================================================================
+    # Calculator - Phase 2 API (derivatives, mixtures, range, bounds)
+    # ==================================================================
+    @testset "Calculator - Phase 2 API" begin
+        calc = Glenn.Calculator(db_file)
+
+        @testset "Temperature bounds" begin
+            # O2 fixture: intervals 200-1000 and 1000-6000
+            @test Glenn.get_temperature_bounds(calc.db, 1) == (200.0, 6000.0)
+            @test Glenn.get_temperature_bounds(calc.db, 99999) === nothing
+
+            err = try
+                Glenn.calculate_properties(calc, 1, 7000.0)
+                nothing
+            catch e
+                e
+            end
+            @test err isa Glenn.TemperatureOutOfRangeError
+            @test err.temp_bounds == (200.0, 6000.0)
+            @test occursin("valid range", err.msg)
+        end
+
+        @testset "calculate_properties_range" begin
+            # Input order is preserved and valid points are kept.
+            props = Glenn.calculate_properties_range(calc, 1, [500.0, 298.15, 1500.0])
+            @test [p.temperature for p in props] == [500.0, 298.15, 1500.0]
+
+            # Non-strict skips out-of-range temperatures.
+            props = Glenn.calculate_properties_range(calc, 1, [100.0, 500.0, 9000.0])
+            @test [p.temperature for p in props] == [500.0]
+
+            # Strict raises on the first out-of-range temperature.
+            @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties_range(
+                calc,
+                1,
+                [500.0, 9000.0];
+                strict = true,
+            )
+
+            # Typed results match the scalar path exactly.
+            scalar = Glenn.calculate_properties(calc, 1, 500.0)
+            @test props[1] == scalar
+
+            # Deprecated 0.4.x alias still returns the same results.
+            @test Glenn.get_properties_range(calc, 1, [500.0, 1500.0]) ==
+                  Glenn.calculate_properties_range(calc, 1, [500.0, 1500.0])
+        end
+
+        @testset "h_sensible_to" begin
+            @test Glenn.h_sensible_to(calc, 1, 1000.0) ≈
+                  Glenn.calculate_enthalpy_change(calc, 1, 298.15, 1000.0)
+            # Default reference is 298.15 K.
+            @test Glenn.h_sensible_to(calc, 1, 1000.0) ≈
+                  Glenn.h_sensible_to(calc, 1, 1000.0, 298.15)
+            # Custom reference temperature.
+            @test Glenn.h_sensible_to(calc, 1, 1000.0, 300.0) ≈
+                  Glenn.calculate_enthalpy_change(calc, 1, 300.0, 1000.0)
+            @test Glenn.h_sensible_to(calc, 1, 500.0, 500.0) ≈ 0.0 atol = 1e-9
+        end
+
+        @testset "dcp_dt" begin
+            T = 500.0
+            analytic = Glenn.dcp_dt(calc, 1, T)
+            eps = 1.0e-3
+            cp_plus = Glenn.calculate_properties(calc, 1, T + eps).cp
+            cp_minus = Glenn.calculate_properties(calc, 1, T - eps).cp
+            @test analytic ≈ (cp_plus - cp_minus) / (2 * eps) rtol = 1e-3
+            @test isfinite(analytic)
+
+            @test_throws Glenn.SpeciesNotFoundError Glenn.dcp_dt(calc, 99999, T)
+            @test_throws Glenn.TemperatureOutOfRangeError Glenn.dcp_dt(calc, 1, 9000.0)
+        end
+
+        @testset "gamma" begin
+            # Not exported, to avoid clashing with SpecialFunctions.gamma, but
+            # reachable as Glenn.gamma.
+            @test !(:gamma in names(Glenn))
+            @test isdefined(Glenn, :gamma)
+            @test Glenn.gamma isa Function
+
+            T = 500.0
+            cp = Glenn.calculate_properties(calc, 1, T).cp
+            @test Glenn.gamma(calc, 1, T) ≈ cp / (cp - calc.R_ref)
+            # Diatomic ideal gas: Cp/Cv slightly above 7/5 at moderate T.
+            @test 1.2 < Glenn.gamma(calc, 1, T) < 1.5
+
+            @test_throws Glenn.SpeciesNotFoundError Glenn.gamma(calc, 99999, T)
+        end
+
+        Glenn.close(calc)
+
+        @testset "mixture_properties" begin
+            inp_mix = "test_mixture_thermo.inp"
+            db_mix = "test_mixture_thermo.db"
+            try
+                write(
+                    inp_mix,
+                    make_thermo_inp([
+                        ("AA", "200.0", "3000.0", "28.0000"),
+                        ("BB", "200.0", "6000.0", "32.0000"),
+                    ]),
+                )
+                Glenn.build_database(inp_mix, db_mix)
+
+                calc2 = Glenn.Calculator(db_mix)
+                aa = only(Glenn.get_available_species(calc2, "AA", exact_match = true))
+                bb = only(Glenn.get_available_species(calc2, "BB", exact_match = true))
+
+                mix = Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    1000.0,
+                )
+
+                # Mole-fraction-weighted mean molar mass, in kg/mol.
+                @test mix.molar_mass ≈ (0.5 * 28.0 + 0.5 * 32.0) / 1000.0
+                @test mix.temperature == 1000.0
+
+                # Mass basis is consistent with the molar basis.
+                @test mix.cp_mass ≈ mix.cp_molar / mix.molar_mass
+                @test mix.h_mass ≈ mix.h_molar / mix.molar_mass
+                @test mix.s_mass ≈ mix.s_molar / mix.molar_mass
+
+                # A single-species mixture reproduces the pure-species values.
+                pure_aa = Glenn.calculate_properties(calc2, aa.id, 1000.0)
+                single =
+                    Glenn.mixture_properties(calc2, Glenn.Mixture(((aa.id, 1.0),)), 1000.0)
+                @test single.cp_molar ≈ pure_aa.cp
+                @test single.h_molar ≈ pure_aa.h_relative
+                @test single.s_molar ≈ pure_aa.s
+                @test single.molar_mass ≈ 0.028
+
+                # Invalid compositions are rejected.
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (aa.id, 0.5))),
+                    1000.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.4))),
+                    1000.0,
+                )
+                @test_throws Glenn.SpeciesNotFoundError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((99999, 1.0),)),
+                    1000.0,
+                )
+
+                # BB is valid up to 6000 K, AA only up to 3000 K.
+                @test_throws Glenn.TemperatureOutOfRangeError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    5000.0;
+                    strict = true,
+                )
+
+                # Non-strict skips AA and renormalises BB to x = 1.
+                partial = Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    5000.0;
+                    strict = false,
+                )
+                pure_bb = Glenn.calculate_properties(calc2, bb.id, 5000.0)
+                @test partial.cp_molar ≈ pure_bb.cp
+                @test partial.molar_mass ≈ 0.032
+
+                Glenn.close(calc2)
+            finally
+                rm(inp_mix, force = true)
+                rm(db_mix, force = true)
+            end
+        end
     end
 
     # ==================================================================

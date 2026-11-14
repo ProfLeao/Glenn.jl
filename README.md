@@ -161,9 +161,14 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | `default_db_path()` | Resolve path to the bundled database |
 | `get_available_species(calc, pattern; exact_match)` | List/filter species |
 | `calculate_properties(calc, id, T)` | Compute Cp, H°, S° at T (K) → `ThermoProperties` |
+| `calculate_properties_range(calc, id, Ts; strict)` | Properties over many temperatures (skips out-of-range, or raises with `strict=true`) |
 | `calculate_formation_enthalpy(calc, id)` | ΔH°f at 298.15 K (J/mol) |
 | `calculate_enthalpy_change(calc, id, T1, T2)` | ΔH = H(T2) − H(T1) |
-| `get_properties_range(calc, id, Ts)` | Properties over multiple T |
+| `h_sensible_to(calc, id, T, t_ref=298.15)` | Sensible enthalpy H(T) − H(t_ref) |
+| `dcp_dt(calc, id, T)` | Analytical dCp/dT, J/(mol·K²) |
+| `Glenn.gamma(calc, id, T)` | Cp/Cv for an ideal gas (not exported) |
+| `mixture_properties(calc, mixture, T; strict)` | Mix properties on molar and mass basis → `MixedProperties` |
+| `get_properties_range(calc, id, Ts)` | **Deprecated** — use `calculate_properties_range` |
 | `close(calc)` | Close the connection |
 
 ### ThermoDBBuilder
@@ -189,6 +194,7 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | `list_species_page(tdb; page, page_size)` | Paginated species listing |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
+| `get_temperature_bounds(tdb, id)` | Overall (T_min, T_max) of a species |
 | `calculate_cp(coeffs, T)` | Cp/R (dimensionless), `coeffs::NASACoefficients` |
 | `calculate_h(coeffs, T)` | H/RT (dimensionless), `coeffs::NASACoefficients` |
 | `calculate_s(coeffs, T)` | S/R (dimensionless), `coeffs::NASACoefficients` |

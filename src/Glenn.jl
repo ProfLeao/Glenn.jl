@@ -114,6 +114,7 @@ using .ThermoDatabase:
     get_species_for_temperature,
     get_statistics,
     get_gas_constant_ref,
+    get_temperature_bounds,
     to_dict,
     validate,
     calculate_cp,
@@ -124,8 +125,13 @@ using .ThermoDatabase:
 using .ThermoCalculator:
     get_available_species,
     calculate_properties,
+    calculate_properties_range,
     calculate_formation_enthalpy,
     calculate_enthalpy_change,
+    h_sensible_to,
+    dcp_dt,
+    gamma,
+    mixture_properties,
     get_properties_range,
     default_db_path,
     default_inp_path
@@ -219,9 +225,17 @@ export find_species,
 # Calculator functions (high-level)
 export get_available_species,
     calculate_properties,
+    calculate_properties_range,
     calculate_formation_enthalpy,
     calculate_enthalpy_change,
-    get_properties_range
+    h_sensible_to,
+    dcp_dt,
+    mixture_properties,
+    get_temperature_bounds,
+    get_properties_range   # deprecated: use calculate_properties_range
+
+# `gamma` is intentionally not exported: it clashes with SpecialFunctions.gamma.
+# Use `Glenn.gamma(calc, id, T)`.
 
 # CLI
 export cli_main

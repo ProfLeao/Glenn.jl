@@ -33,6 +33,26 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ✨ Added
 
+- **`calculate_properties_range(calc, id, temps; strict=false)`** — canonical
+  bulk-properties function, mirroring the reference implementation. Loads the
+  species intervals once, preserves input order, and skips out-of-range
+  temperatures unless `strict=true`, in which case the first one raises
+  `TemperatureOutOfRangeError`. `calculate_properties(calc, id, temps)` now
+  delegates to it.
+- **`h_sensible_to(calc, id, T, t_ref=298.15)`** — sensible enthalpy
+  `H(T) − H(t_ref)` in J/mol.
+- **`dcp_dt(calc, id, T)`** — analytical temperature derivative of Cp in
+  J/(mol·K²), obtained by differentiating the NASA-7 polynomial term by term.
+- **`Glenn.gamma(calc, id, T)`** — Cp/Cv ratio for an ideal gas. Not exported,
+  because `gamma` collides with `SpecialFunctions.gamma`.
+- **`mixture_properties(calc, mixture, T; strict=true)`** — properties of a
+  fixed-composition mixture on both a molar and a mass basis, returning the new
+  `MixedProperties` type. With `strict=false`, components outside their valid
+  range are skipped, the remaining mole fractions are renormalised, and a
+  warning is logged.
+- **`get_temperature_bounds(tdb, id)`** — overall `(T_min, T_max)` covered by a
+  species. `TemperatureOutOfRangeError` now reports the valid range in its
+  message and carries it in `temp_bounds`.
 - **`build_database(inp, db; merge_duplicates=true)`** — one-call database build
   that always closes the connection, even when parsing fails.
 - **`parse_and_load(builder; merge_duplicates)`** — set to `false` to keep only
@@ -68,6 +88,13 @@ All notable changes to Glenn.jl are documented in this file.
 - **`calculate_properties`** and `calculate_formation_enthalpy` now raise
   `SpeciesNotFoundError` / `TemperatureOutOfRangeError` instead of a generic
   error, matching their documented contract.
+
+### 🗑️ Deprecated
+
+- `get_properties_range` is deprecated in favour of
+  `calculate_properties_range`. It still works and returns the same results, but
+  emits a deprecation warning; it stays exported only for backwards
+  compatibility.
 
 ### ⚠️ Breaking Changes
 

@@ -816,10 +816,35 @@ function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature
     return nothing
 end
 
+"""
+    get_temperature_bounds(tdb::ThermoDB, species_id::Int)
+       -> Union{Tuple{Float64, Float64}, Nothing}
+
+Return the overall `(T_min, T_max)` covered by a species' temperature intervals,
+or `nothing` when the species has no intervals (or does not exist).
+
+Useful to report a precise diagnostic when a temperature is out of range.
+"""
+function get_temperature_bounds(tdb::ThermoDB, species_id::Int)
+    for row in SQLite.DBInterface.execute(
+        tdb.db,
+        """
+        SELECT MIN(temp_min), MAX(temp_max)
+        FROM temperature_intervals WHERE species_id = ?
+        """,
+        (species_id,),
+    )
+        tmin, tmax = row[1], row[2]
+        (tmin === nothing || tmax === nothing) && return nothing
+        (ismissing(tmin) || ismissing(tmax)) && return nothing
+        return (Float64(tmin), Float64(tmax))
+    end
+    return nothing
+end
+
 # ------------------------------------------------------------------
 # NASA-7 polynomial calculations (dimensionless: Cp/R, H/RT, S/R)
 # ------------------------------------------------------------------
-
 """
     calculate_cp(coeffs::NASACoefficients, T::Float64) -> Float64
 
@@ -893,6 +918,6 @@ export ThermoCalcError,
 export NASACoefficients, SpeciesInfo, SpeciesData, IntervalData, DatabaseStats
 export Mixture, MixedProperties, to_dict, validate
 export ThermoDB, R_UNIVERSAL, R_GLENN
-export get_gas_constant_ref
+export get_gas_constant_ref, get_temperature_bounds
 
 end # module ThermoDatabase

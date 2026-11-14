@@ -60,6 +60,7 @@ Glenn.list_all_species
 Glenn.get_species_data
 Glenn.get_species_info
 Glenn.get_species_for_temperature
+Glenn.get_temperature_bounds
 ```
 
 ## NASA-7 Polynomials
