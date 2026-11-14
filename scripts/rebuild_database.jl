@@ -13,8 +13,13 @@
 #     julia --project=. scripts/rebuild_database.jl --skip-gates --force
 #
 # Release gates for the canonical NASA Glenn/CEA dataset (thermo.inp 9/09/04).
-# They match the reference implementation (pyglenn) so both packages ship the
-# same dataset.
+#
+# 2035 species: identical to the reference implementation (pyglenn).
+# 3795 intervals: 3779 + 16 intervals recovered from repeated species records
+#   (phase-transition blocks such as Cr(cr) below/above the lambda
+#   transformation). This is deliberately 16 above the reference implementation,
+#   which keeps only the first record of each such substance — see
+#   docs/PARSER_FIX_PORTING.md.
 # =====================================================================
 
 import Pkg
@@ -29,8 +34,8 @@ const DEFAULT_INP = joinpath(REPO_ROOT, "data", "thermo.inp")
 const DEFAULT_DB = joinpath(REPO_ROOT, "data", "thermo.db")
 
 const EXPECTED_SPECIES = 2035
-const EXPECTED_INTERVALS = 3779
-const EXPECTED_COEFFS = 3779
+const EXPECTED_INTERVALS = 3795
+const EXPECTED_COEFFS = 3795
 
 # ------------------------------------------------------------------
 # Integrity checks (read-only)

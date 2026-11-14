@@ -207,11 +207,40 @@ function copy_to_disk(mem_db::SQLite.DB, disk_path::String)
     return disk_db
 end
 
+"""
+    make_thermo_inp(records) -> String
+
+Build a minimal FORTRAN `thermo.inp` from `(name, tmin, tmax)` records, one
+temperature interval each. Allows several records to reuse the same species
+name, which is how `thermo.inp` encodes phase transitions.
+"""
+function make_thermo_inp(records)
+    coeffs_a = ["1.0D+00", "0.0D+00", "3.5D+00", "0.0D+00", "0.0D+00"]
+    coeffs_b = ["0.0D+00", "0.0D+00", "0.00000000D+00", "1.0D+02", "2.0D+01"]
+
+    lines = String["THERMO", "   300.000   1000.000   5000.000"]
+    for (name, tmin, tmax) in records
+        push!(lines, rpad(name, 16) * "  " * rpad("Test species", 62))
+
+        rec2 =
+            " 1" * " " * rpad("g 2/99", 43) * " 0" * rpad("31.9988", 14) * rpad("0.0", 15)
+        push!(lines, rpad(rec2[1:min(end, 80)], 80))
+
+        rec3 =
+            rpad(tmin, 11) * rpad(tmax, 11) * rpad("", 44) * rpad("8680.0", 15)
+        push!(lines, rpad(rec3[1:min(end, 80)], 80))
+
+        push!(lines, join(lpad.(coeffs_a, 16)))
+        push!(lines, join(lpad.(coeffs_b, 16)))
+    end
+
+    return join(lines, "\n") * "\n"
+end
+
 # ------------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------------
 @testset "Glenn.jl" begin
-
     # ==================================================================
     # Code quality (Aqua.jl)
     # ==================================================================
@@ -961,6 +990,57 @@ end
     end
 
     # ==================================================================
+    # Builder - Merged duplicate records (v0.5.0 phase 0)
+    # ==================================================================
+    @testset "Builder - Merged duplicate records" begin
+        inp_m = "test_merge_thermo.inp"
+        db_m = "test_merge_thermo.db"
+
+        try
+            # Same species name, two adjacent ranges (the Cr(cr) pattern).
+            write(
+                inp_m,
+                make_thermo_inp([("XX", "200.0", "1000.0"), ("XX", "1000.0", "2000.0")]),
+            )
+            Glenn.build_database(inp_m, db_m)
+
+            tdb = Glenn.ThermoDB(db_m)
+            stats = Glenn.get_statistics(tdb)
+            @test stats.total_species == 1
+            @test stats.total_intervals == 2
+
+            info = only(Glenn.list_all_species(tdb))
+            @test info.num_intervals == 2
+
+            data = Glenn.get_species_data(tdb, info.id)
+            @test [(iv.temp_min, iv.temp_max) for iv in data.intervals] ==
+                  [(200.0, 1000.0), (1000.0, 2000.0)]
+            Glenn.ThermoDatabase.close(tdb)
+
+            # merge_duplicates=false keeps the reference (first-only) behaviour.
+            rm(db_m; force = true)
+            Glenn.build_database(inp_m, db_m; merge_duplicates = false)
+            tdb = Glenn.ThermoDB(db_m)
+            @test Glenn.get_statistics(tdb).total_intervals == 1
+            Glenn.ThermoDatabase.close(tdb)
+
+            # An exact duplicate range is skipped, never stored twice.
+            rm(db_m; force = true)
+            write(
+                inp_m,
+                make_thermo_inp([("YY", "200.0", "1000.0"), ("YY", "200.0", "1000.0")]),
+            )
+            Glenn.build_database(inp_m, db_m)
+            tdb = Glenn.ThermoDB(db_m)
+            @test Glenn.get_statistics(tdb).total_intervals == 1
+            Glenn.ThermoDatabase.close(tdb)
+        finally
+            rm(inp_m, force = true)
+            rm(db_m, force = true)
+        end
+    end
+
+    # ==================================================================
     # Bundled database (dataset release gates)
     # ==================================================================
     @testset "Bundled database" begin
@@ -973,8 +1053,8 @@ end
         # Release gates for the canonical NASA Glenn/CEA dataset — keep in sync
         # with scripts/rebuild_database.jl.
         @test stats.total_species == 2035
-        @test stats.total_intervals == 3779
-        @test stats.total_coeff_sets == 3779
+        @test stats.total_intervals == 3795
+        @test stats.total_coeff_sets == 3795
 
         # The parser must never store FORTRAN tokens as species names.
         names = [s.name for s in Glenn.list_all_species(tdb)]
@@ -984,6 +1064,15 @@ end
         for name in ("C2H5OH(L)", "C6H6(L)", "CLO3F", "H2O2(L)", "JP-10(g)")
             @test !isempty(Glenn.find_species(tdb, name; exact_match = true))
         end
+
+        # Phase-transition records are merged, so condensed substances keep
+        # their complete temperature range (Cr(cr) below/above lambda).
+        cr = only(Glenn.find_species(tdb, "Cr(cr)"; exact_match = true))
+        cr_data = Glenn.get_species_data(tdb, cr.id)
+        @test length(cr_data.intervals) == 3
+        @test cr_data.num_intervals == 3
+        @test cr_data.intervals[1].temp_min == 200.0
+        @test cr_data.intervals[end].temp_max == 2130.0
 
         # Dataset reference constant survives a rebuild.
         @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN

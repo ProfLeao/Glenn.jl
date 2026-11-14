@@ -12,9 +12,17 @@ All notable changes to Glenn.jl are documented in this file.
   state-machine parser. The previous parser desynchronised on malformed blocks,
   which stored three FORTRAN coefficient lines as "species"
   (`-1.302004763D+06`, `-7.310769440D+05`, `4.461077310D+04`) and silently
-  dropped eight genuine species. The dataset now matches the reference
-  implementation at **2035 species / 3779 intervals** (previously 2030 / 3772),
-  and every previously present species keeps identical coefficients.
+  dropped eight genuine species. The dataset now holds **2035 species /
+  3795 intervals** (previously 2030 / 3772), and every previously present
+  species keeps identical coefficients.
+- **Repeated species records are merged.** `thermo.inp` encodes phase
+  transitions by repeating a species name (`Cr(cr)`, `Cr2O3(I)`, `Fe(a)`,
+  `Ni(cr)`, …). Previously only the first record was kept — and intervals from
+  the later ones were stored under colliding numbers, so `Cr(cr)` reported a
+  bogus `[200, 311.5] K` + `[1000, 2130] K` pair and 500 K raised
+  `TemperatureOutOfRangeError`. The extra records are now appended as additional
+  intervals (16 recovered across 10 substances), giving each substance its
+  complete contiguous range.
 - **`parse_and_load` no longer creates partial species.** Every declared
   interval is validated before the species row is inserted, and malformed blocks
   are skipped by resynchronising at the next verified species header.
@@ -25,15 +33,18 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ✨ Added
 
-- **`build_database(inp, db)`** — one-call database build that always closes the
-  connection, even when parsing fails.
+- **`build_database(inp, db; merge_duplicates=true)`** — one-call database build
+  that always closes the connection, even when parsing fails.
+- **`parse_and_load(builder; merge_duplicates)`** — set to `false` to keep only
+  the first record of a repeated species, matching the reference
+  implementation's dataset exactly.
 - **`scripts/rebuild_database.jl`** — reproducible, atomic dataset rebuild:
   builds next to the target, runs integrity checks and release gates
   (expected species/intervals/coefficient sets), and only then replaces the
   bundled database.
-
-### ✨ Added
-
+- **`docs/PARSER_FIX_PORTING.md`** — porting guide for the parser and dataset
+  fixes, including the checklist and regression tests for the reference
+  implementation.
 - **`SpeciesData`** — typed record returned by `get_species_data` (identification
   metadata plus every temperature interval). Dictionary-style access
   (`data["name"]`) still works, and `to_dict` restores the previous `Dict` shape.

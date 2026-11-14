@@ -24,7 +24,7 @@ builder and CLI are available when you need to create or inspect a database.
 - Build databases from NASA FORTRAN `thermo.inp` files
 - Command-line interface (`build` and `query`)
 - **NIST-JANAF cross-validation** — validated against reference data for 7 species (CO₂, N₂, CO, H₂O, O₂, NH₃, SO₂)
-- ~2035 species, 3779 temperature intervals
+- ~2035 species, 3795 temperature intervals
 - Full [Documenter.jl](https://documenter.juliadocs.org) documentation
 
 ## Installation
@@ -89,7 +89,7 @@ end
 
 > **⚠️ You do NOT need to build the database for normal use.**
 > The package ships with a pre-built `thermo.db` containing 2035 species
-> and 3779 temperature intervals. `Calculator()` uses it automatically.
+> and 3795 temperature intervals. `Calculator()` uses it automatically.
 
 You only need to rebuild the database in these situations:
 
@@ -229,8 +229,8 @@ from the NASA Glenn FORTRAN thermochemical tables.
 | Table | Records | Description |
 |---|---|---|
 | `species` | 2035 | Chemical species (name, formula, phase, MW, ΔH°f) |
-| `temperature_intervals` | 3779 | Valid T ranges per species |
-| `coefficients` | 3779 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
+| `temperature_intervals` | 3795 | Valid T ranges per species |
+| `coefficients` | 3795 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
 | `file_metadata` | 1 | Global file metadata |
 | `metadata` | 2 | Dataset metadata (reference gas constant) |
 

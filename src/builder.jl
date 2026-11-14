@@ -506,7 +506,128 @@ end
 # ------------------------------------------------------------------
 
 """
-    parse_and_load(builder::ThermoDBBuilder)
+    _insert_interval(conn, species_id, interval_number, interval, coeffs)
+
+Insert one temperature interval and its NASA-7 coefficient set.
+"""
+function _insert_interval(
+    conn,
+    species_id::Integer,
+    interval_number::Integer,
+    interval::Dict{String, Any},
+    coeffs::Dict{String, Any},
+)
+    SQLite.execute(
+        conn,
+        """
+           INSERT INTO temperature_intervals
+               (species_id, interval_number, temp_min,
+                temp_max, h_298_to_0)
+           VALUES (?, ?, ?, ?, ?)
+       """,
+        (
+            species_id,
+            interval_number,
+            interval["temp_min"],
+            interval["temp_max"],
+            get(interval, "h_298_to_0", nothing),
+        ),
+    )
+    interval_id = SQLite.last_insert_rowid(conn)
+
+    SQLite.execute(
+        conn,
+        """
+           INSERT INTO coefficients
+               (interval_id, a1, a2, a3, a4, a5,
+                a6, a7, b1, b2)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       """,
+        (
+            interval_id,
+            coeffs["a1"],
+            coeffs["a2"],
+            coeffs["a3"],
+            coeffs["a4"],
+            coeffs["a5"],
+            coeffs["a6"],
+            coeffs["a7"],
+            coeffs["b1"],
+            coeffs["b2"],
+        ),
+    )
+    return interval_id
+end
+
+"""
+    _merge_intervals(conn, species_id, species_name, intervals) -> Int
+
+Append the intervals of a repeated species record to the species already
+stored under that name.
+
+`thermo.inp` splits some condensed substances into several records that reuse
+the same name — for example `Cr(cr)` appears once `Below lambda trans.` and once
+`Above lambda trans.`, and `Cr2O3(I)` appears three times. Keeping only the
+first record leaves those substances without their high-temperature range.
+
+Intervals whose bounds coincide with, or overlap, an already stored range are
+skipped with a warning, so a duplicated record can never corrupt the data.
+Returns the number of intervals added.
+"""
+function _merge_intervals(
+    conn,
+    species_id::Integer,
+    species_name::AbstractString,
+    intervals::Vector{Tuple{Dict{String, Any}, Dict{String, Any}}},
+)
+    existing = Tuple{Float64, Float64}[]
+    next_number = 1
+    for row in SQLite.DBInterface.execute(
+        conn,
+        """
+        SELECT interval_number, temp_min, temp_max
+        FROM temperature_intervals WHERE species_id = ?
+        ORDER BY interval_number
+        """,
+        (species_id,),
+    )
+        push!(existing, (Float64(row[2]), Float64(row[3])))
+        next_number = max(next_number, Int(row[1]) + 1)
+    end
+
+    added = 0
+    for (interval, coeffs) in intervals
+        temp_min = Float64(interval["temp_min"])
+        temp_max = Float64(interval["temp_max"])
+
+        if any(b -> isapprox(b[1], temp_min) && isapprox(b[2], temp_max), existing)
+            @debug "Skipping duplicate interval [$temp_min, $temp_max] for '$species_name'"
+            continue
+        end
+        if any(b -> temp_min < b[2] && temp_max > b[1], existing)
+            @warn "Skipping overlapping interval [$temp_min, $temp_max] for '$species_name'"
+            continue
+        end
+
+        _insert_interval(conn, species_id, next_number, interval, coeffs)
+        push!(existing, (temp_min, temp_max))
+        next_number += 1
+        added += 1
+    end
+
+    if added > 0
+        SQLite.execute(
+            conn,
+            "UPDATE species SET num_intervals = ? WHERE id = ?",
+            (length(existing), species_id),
+        )
+    end
+
+    return added
+end
+
+"""
+    parse_and_load(builder::ThermoDBBuilder; merge_duplicates::Bool=true)
 
 Parse the thermo.inp file and populate the database.
 
@@ -514,8 +635,18 @@ Reads the FORTRAN file line by line, detects record types,
 extracts species data, temperature intervals, and polynomial
 coefficients, then inserts everything into the normalized
 SQLite schema.
+
+A species is inserted only after every declared interval and its two coefficient
+records have been parsed and validated, so malformed blocks are skipped without
+leaving partial rows behind.
+
+Some condensed substances appear as several records that reuse the same name
+(phase transitions, e.g. `Cr(cr)` below/above the lambda transformation). With
+`merge_duplicates=true` (default) the extra records are appended as additional
+temperature intervals, so the full temperature range stays available. Set it to
+`false` to keep only the first record, matching the reference implementation.
 """
-function parse_and_load(builder::ThermoDBBuilder)
+function parse_and_load(builder::ThermoDBBuilder; merge_duplicates::Bool = true)
     conn = builder.conn
     @assert conn !== nothing "Database not connected"
 
@@ -558,7 +689,8 @@ function parse_and_load(builder::ThermoDBBuilder)
 
         # --- Species loop ---
         species_count = 0
-        existing_count = 0
+        duplicate_species = 0
+        merged_intervals = 0
         skipped = 0
         i = 3  # 1-based index (skip THERMO header + metadata)
 
@@ -630,7 +762,7 @@ function parse_and_load(builder::ThermoDBBuilder)
                         i += 1
                         continue
                     end
-                    existing_count += 1
+                    duplicate_species += 1
                 else
                     rethrow(e)
                 end
@@ -638,48 +770,13 @@ function parse_and_load(builder::ThermoDBBuilder)
 
             if inserted
                 for (interval_number, (interval, coeffs)) in enumerate(intervals)
-                    SQLite.execute(
-                        conn,
-                        """
-           INSERT INTO temperature_intervals
-               (species_id, interval_number, temp_min,
-                temp_max, h_298_to_0)
-           VALUES (?, ?, ?, ?, ?)
-       """,
-                        (
-                            species_id,
-                            interval_number,
-                            interval["temp_min"],
-                            interval["temp_max"],
-                            get(interval, "h_298_to_0", nothing),
-                        ),
-                    )
-                    interval_id = SQLite.last_insert_rowid(conn)
-
-                    SQLite.execute(
-                        conn,
-                        """
-           INSERT INTO coefficients
-               (interval_id, a1, a2, a3, a4, a5,
-                a6, a7, b1, b2)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       """,
-                        (
-                            interval_id,
-                            coeffs["a1"],
-                            coeffs["a2"],
-                            coeffs["a3"],
-                            coeffs["a4"],
-                            coeffs["a5"],
-                            coeffs["a6"],
-                            coeffs["a7"],
-                            coeffs["b1"],
-                            coeffs["b2"],
-                        ),
-                    )
+                    _insert_interval(conn, species_id, interval_number, interval, coeffs)
                 end
                 species_count += 1
                 @debug "Loaded species: $species_name"
+            elseif merge_duplicates
+                merged_intervals +=
+                    _merge_intervals(conn, species_id, species_name, intervals)
             end
 
             i = next_index
@@ -700,9 +797,10 @@ function parse_and_load(builder::ThermoDBBuilder)
         SQLite.execute(conn, "COMMIT")
 
         @info repeat("=", 70)
-        @info "New species loaded: $species_count"
-        @info "Already existing:   $existing_count"
-        @info "Malformed skipped:  $skipped"
+        @info "New species loaded:       $species_count"
+        @info "Repeated species records: $duplicate_species"
+        @info "Merged intervals:         $merged_intervals"
+        @info "Malformed skipped:        $skipped"
         @info "Database: $(builder.db_file)"
 
     catch e
@@ -713,13 +811,16 @@ function parse_and_load(builder::ThermoDBBuilder)
 end
 
 """
-    build_database(inp_file, db_file) -> String
+    build_database(inp_file, db_file; merge_duplicates::Bool=true) -> String
 
 Build a SQLite thermochemical database from a NASA FORTRAN `thermo.inp` file.
 
 Convenience wrapper around the four-step lifecycle
 (`connect` → `create_tables` → `parse_and_load` → `close`), so the connection
 is always closed even if parsing fails. Returns the database path.
+
+`merge_duplicates` is forwarded to `parse_and_load`; see its documentation for
+how repeated species records (phase transitions) are handled.
 
 # Example
 
@@ -729,12 +830,16 @@ using Glenn
 build_database(default_inp_path(), "thermo.db")
 ```
 """
-function build_database(inp_file::AbstractString, db_file::AbstractString)
+function build_database(
+    inp_file::AbstractString,
+    db_file::AbstractString;
+    merge_duplicates::Bool = true,
+)
     builder = ThermoDBBuilder(inp_file, db_file)
     try
         connect(builder)
         create_tables(builder)
-        parse_and_load(builder)
+        parse_and_load(builder; merge_duplicates = merge_duplicates)
     finally
         close(builder)
     end
