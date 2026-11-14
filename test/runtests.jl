@@ -304,6 +304,103 @@ end
     end
 
     # ==================================================================
+    # v0.5.0 Phase 1 — exception hierarchy and models
+    # ==================================================================
+    @testset "Exception hierarchy" begin
+        # Every package error must be catchable through the abstract base.
+        @test Glenn.ThermoCalcError isa Type
+        @test Glenn.DatabaseNotConnectedError <: Glenn.ThermoCalcError
+        @test Glenn.SpeciesNotFoundError <: Glenn.ThermoCalcError
+        @test Glenn.TemperatureOutOfRangeError <: Glenn.ThermoCalcError
+        @test Glenn.CompositionError <: Glenn.ThermoCalcError
+        @test Glenn.ThermoError <: Glenn.ThermoCalcError
+        @test Glenn.ThermoCalcError <: Exception
+
+        # The concrete errors are themselves Exception subtypes.
+        for E in (
+            Glenn.DatabaseNotConnectedError,
+            Glenn.SpeciesNotFoundError,
+            Glenn.TemperatureOutOfRangeError,
+            Glenn.CompositionError,
+        )
+            @test E <: Exception
+        end
+
+        # Legacy constructor still works and yields a generic ThermoError.
+        generic = Glenn.ThermoCalcError("boom")
+        @test generic isa Glenn.ThermoError
+        @test generic.msg == "boom"
+        @test sprint(showerror, generic) == "ThermoCalcError: boom"
+
+        # Cold trap by the abstract type.
+        @test_throws Glenn.ThermoCalcError throw(Glenn.CompositionError("bad"))
+
+        # Bounds are carried when known and surfaced in the message.
+        no_bounds = Glenn.TemperatureOutOfRangeError(7000.0, "N2")
+        @test no_bounds.temp_bounds === nothing
+        @test occursin("7000.0", no_bounds.msg)
+        @test occursin("N2", no_bounds.msg)
+
+        with_bounds = Glenn.TemperatureOutOfRangeError(7000.0, "N2", (200.0, 6000.0))
+        @test with_bounds.temp_bounds == (200.0, 6000.0)
+        @test occursin("valid range", with_bounds.msg)
+
+        @test sprint(showerror, Glenn.CompositionError("oops")) == "CompositionError: oops"
+    end
+
+    @testset "Mixture validation" begin
+        # Accepted input shapes.
+        @test Glenn.Mixture(((1, 0.79), (2, 0.21))).species ==
+              [(1, 0.79), (2, 0.21)]
+        @test Glenn.Mixture([(1, 0.5), (2, 0.5)]).species == [(1, 0.5), (2, 0.5)]
+
+        valid = Glenn.Mixture(((1, 0.79), (2, 0.21)))
+        @test Glenn.validate(valid) === nothing
+
+        # Single species at x = 1.0 is valid.
+        @test Glenn.validate(Glenn.Mixture(((1, 1.0),))) === nothing
+
+        # Invalid compositions.
+        @test_throws Glenn.CompositionError Glenn.validate(Glenn.Mixture(()))
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 0.5), (1, 0.5))),
+        )
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 1.5), (2, -0.5))),
+        )
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 0.5), (2, 0.49))),
+        )
+
+        # Tolerance is configurable.
+        @test Glenn.validate(Glenn.Mixture(((1, 0.5), (2, 0.4999))); tol = 1e-3) === nothing
+    end
+
+    @testset "MixedProperties struct" begin
+        mix = Glenn.MixedProperties(
+            1000.0,
+            1100.0,
+            30000.0,
+            200.0,
+            0.0288,
+            38194.4,
+            1041666.7,
+            6944.4,
+        )
+        @test mix.temperature == 1000.0
+        @test mix.cp_molar == 1100.0
+        @test mix.molar_mass == 0.0288
+        @test mix.cp_mass == 38194.4
+    end
+
+    @testset "R compatibility alias" begin
+        @test Glenn.R == Glenn.R_UNIVERSAL
+        # Deliberately not exported: `R` is a very common local variable name.
+        @test !(:R in names(Glenn))
+        @test :R in names(Glenn; all = true)
+    end
+
+    # ==================================================================
     # Database queries (disk-based)
     # ==================================================================
     mem_db = setup_test_db()
@@ -356,6 +453,39 @@ end
         @test length(data["intervals"]) == 2
         @test data["intervals"][1].temp_min == 200.0
         @test data["intervals"][1].temp_max == 1000.0
+
+        # v0.5.0: get_species_data returns a typed SpeciesData
+        @test data isa Glenn.SpeciesData
+        @test data.name == "O2"
+        @test data.phase == "gas"
+        @test data.molecular_weight ≈ 31.9988
+        @test data.num_intervals == 2
+        @test length(data.intervals) == 2
+        @test data.intervals[1] isa Glenn.IntervalData
+        @test data.intervals[1].coefficients isa Glenn.NASACoefficients
+
+        # Legacy dict-style access is preserved for backwards compatibility.
+        @test data["phase"] == data.phase
+        @test data["intervals"] === data.intervals
+        @test Set(keys(data)) == Set((
+            "id",
+            "name",
+            "formula",
+            "comments",
+            "reference_code",
+            "phase",
+            "molecular_weight",
+            "heat_of_formation_298K",
+            "num_intervals",
+            "intervals",
+        ))
+        @test_throws KeyError data["nope"]
+
+        # to_dict reproduces the pre-0.5.0 return shape.
+        as_dict = Glenn.to_dict(data)
+        @test as_dict isa Dict{String, Any}
+        @test as_dict["name"] == "O2"
+        @test as_dict["intervals"] === data.intervals
 
         # Nonexistent species
         @test Glenn.get_species_data(tdb, 99999) === nothing

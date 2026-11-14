@@ -73,20 +73,36 @@ include("cli.jl")         # Command-line interface
 # Constants & types
 const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
 const R_GLENN = ThermoDatabase.R_GLENN
+
+"""
+    R
+
+Compatibility alias of [`R_UNIVERSAL`](@ref), mirroring the `pyglenn` API.
+
+Accessible as `Glenn.R`; not exported, to avoid clashing with the very common
+local variable name `R`.
+"""
+const R = R_UNIVERSAL
+
 const Calculator = ThermoCalculator.Calculator
 const ThermoDB = ThermoDatabase.ThermoDB
 const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder
 const ThermoProperties = ThermoCalculator.ThermoProperties
 const SpeciesInfo = ThermoDatabase.SpeciesInfo
+const SpeciesData = ThermoDatabase.SpeciesData
 const NASACoefficients = ThermoDatabase.NASACoefficients
 const IntervalData = ThermoDatabase.IntervalData
 const DatabaseStats = ThermoDatabase.DatabaseStats
+const Mixture = ThermoDatabase.Mixture
+const MixedProperties = ThermoDatabase.MixedProperties
 
 # Exception types (defined in ThermoDatabase, re-exported)
 const ThermoCalcError = ThermoDatabase.ThermoCalcError
+const ThermoError = ThermoDatabase.ThermoError
 const DatabaseNotConnectedError = ThermoDatabase.DatabaseNotConnectedError
 const SpeciesNotFoundError = ThermoDatabase.SpeciesNotFoundError
 const TemperatureOutOfRangeError = ThermoDatabase.TemperatureOutOfRangeError
+const CompositionError = ThermoDatabase.CompositionError
 
 # Database functions
 using .ThermoDatabase:
@@ -98,6 +114,8 @@ using .ThermoDatabase:
     get_species_for_temperature,
     get_statistics,
     get_gas_constant_ref,
+    to_dict,
+    validate,
     calculate_cp,
     calculate_h,
     calculate_s
@@ -166,15 +184,20 @@ export __version__, __author__
 
 # Types
 export Calculator, ThermoDB, ThermoDBBuilder
-export ThermoProperties, SpeciesInfo, NASACoefficients, IntervalData
+export ThermoProperties, SpeciesInfo, SpeciesData, NASACoefficients, IntervalData
 export DatabaseStats
+export Mixture, MixedProperties
 export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
 export migrate_metadata!
 
 # Exception types
 export ThermoCalcError,
-    DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
+    ThermoError,
+    DatabaseNotConnectedError,
+    SpeciesNotFoundError,
+    TemperatureOutOfRangeError,
+    CompositionError
 
 # Database functions (low-level)
 export find_species,
@@ -185,6 +208,8 @@ export find_species,
     get_species_for_temperature,
     get_statistics,
     get_gas_constant_ref,
+    to_dict,
+    validate,
     calculate_cp,
     calculate_h,
     calculate_s

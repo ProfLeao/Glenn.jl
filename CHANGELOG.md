@@ -4,6 +4,43 @@ All notable changes to Glenn.jl are documented in this file.
 
 ---
 
+## [Unreleased] — 0.5.0
+
+### ✨ Added
+
+- **`SpeciesData`** — typed record returned by `get_species_data` (identification
+  metadata plus every temperature interval). Dictionary-style access
+  (`data["name"]`) still works, and `to_dict` restores the previous `Dict` shape.
+- **`Mixture`**, **`MixedProperties`** and `validate` — fixed-composition
+  mixtures and their molar/mass-basis properties.
+- **`CompositionError`** — raised for invalid mixture compositions (empty,
+  duplicate species IDs, negative fractions, fractions not summing to 1).
+- **`ThermoError`** — generic concrete `ThermoCalcError`.
+- **`Glenn.R`** — compatibility alias of `R_UNIVERSAL`, mirroring the `pyglenn`
+  API. Not exported, to avoid clashing with the common local variable name `R`.
+
+### 🔧 Changed
+
+- **Exception hierarchy:** `DatabaseNotConnectedError`, `SpeciesNotFoundError`,
+  `TemperatureOutOfRangeError`, `CompositionError` and `ThermoError` are now
+  subtypes of the abstract `ThermoCalcError`, so a single
+  `catch e::ThermoCalcError` covers the whole package. The historical
+  `ThermoCalcError("msg")` constructor still works and returns a `ThermoError`.
+- **`TemperatureOutOfRangeError`** now carries `temp_bounds` and includes the
+  valid range in its message when known.
+- **`calculate_properties`** and `calculate_formation_enthalpy` now raise
+  `SpeciesNotFoundError` / `TemperatureOutOfRangeError` instead of a generic
+  error, matching their documented contract.
+
+### ⚠️ Breaking Changes
+
+- `get_species_data` returns `SpeciesData` instead of `Dict`. `data["name"]`
+  keeps working; code relying on other `Dict` operations (`haskey`, `get`,
+  iteration) should use fields or `to_dict(data)`.
+- `ThermoCalcError` is now an abstract type (still `<: Exception`).
+
+---
+
 ## [0.4.1] — 2026-08-22
 
 ### ✨ Added

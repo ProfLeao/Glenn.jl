@@ -11,10 +11,12 @@ All thermodynamic functions return **dimensionless** values (divided by R).
 ## Exception Types
 
 ```@docs
-ThermoCalcError
-DatabaseNotConnectedError
-SpeciesNotFoundError
-TemperatureOutOfRangeError
+Glenn.ThermoDatabase.ThermoCalcError
+Glenn.ThermoDatabase.ThermoError
+Glenn.ThermoDatabase.DatabaseNotConnectedError
+Glenn.ThermoDatabase.SpeciesNotFoundError
+Glenn.ThermoDatabase.TemperatureOutOfRangeError
+Glenn.ThermoDatabase.CompositionError
 ```
 
 ## Types
@@ -22,9 +24,19 @@ TemperatureOutOfRangeError
 ```@docs
 NASACoefficients
 SpeciesInfo
+Glenn.ThermoDatabase.SpeciesData
 IntervalData
 DatabaseStats
+Glenn.ThermoDatabase.Mixture
+Glenn.ThermoDatabase.MixedProperties
 Glenn.ThermoDatabase.ThermoDB
+```
+
+## Mixtures and species data helpers
+
+```@docs
+Glenn.to_dict
+Glenn.validate
 ```
 
 ## Statistics

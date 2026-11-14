@@ -15,19 +15,34 @@ using SQLite
 """
     ThermoCalcError
 
-Base exception type for thermochemical calculation errors.
+Abstract base type for every error raised by Glenn.jl. Catching
+`ThermoCalcError` catches the whole hierarchy.
+
+For backwards compatibility, `ThermoCalcError("message")` still builds a
+generic `ThermoError`, so existing `throw(ThermoCalcError(...))` code keeps
+working.
 """
-struct ThermoCalcError <: Exception
+abstract type ThermoCalcError <: Exception end
+
+"""
+    ThermoError
+
+Generic `ThermoCalcError` used when no more specific error applies.
+"""
+struct ThermoError <: ThermoCalcError
     msg::String
 end
-Base.showerror(io::IO, e::ThermoCalcError) = print(io, "ThermoCalcError: ", e.msg)
+Base.showerror(io::IO, e::ThermoError) = print(io, "ThermoCalcError: ", e.msg)
+
+# Historical constructor: `ThermoCalcError` used to be a concrete struct.
+(::Type{ThermoCalcError})(msg::AbstractString) = ThermoError(String(msg))
 
 """
     DatabaseNotConnectedError
 
 Raised when attempting a calculation without an active database connection.
 """
-struct DatabaseNotConnectedError <: Exception
+struct DatabaseNotConnectedError <: ThermoCalcError
     msg::String
 end
 function DatabaseNotConnectedError()
@@ -42,7 +57,7 @@ end
 
 Raised when a species ID is not found in the database.
 """
-struct SpeciesNotFoundError <: Exception
+struct SpeciesNotFoundError <: ThermoCalcError
     msg::String
     species_id::Int
 end
@@ -52,22 +67,41 @@ end
 Base.showerror(io::IO, e::SpeciesNotFoundError) = print(io, "SpeciesNotFoundError: ", e.msg)
 
 """
+    CompositionError
+
+Raised when a mixture composition is invalid (empty mixture, duplicate
+species IDs, negative mole fractions, or fractions that do not sum to 1).
+"""
+struct CompositionError <: ThermoCalcError
+    msg::String
+end
+Base.showerror(io::IO, e::CompositionError) = print(io, "CompositionError: ", e.msg)
+
+"""
     TemperatureOutOfRangeError
 
 Raised when the requested temperature is outside all valid intervals
 for the given species.
+
+`temp_bounds` carries the overall `(T_min, T_max)` of the species when known,
+so callers can report a useful diagnostic.
 """
-struct TemperatureOutOfRangeError <: Exception
+struct TemperatureOutOfRangeError <: ThermoCalcError
     msg::String
     temperature::Float64
     species_name::String
+    temp_bounds::Union{Tuple{Float64, Float64}, Nothing}
 end
-function TemperatureOutOfRangeError(temperature::Float64, species_name::String)
-    return TemperatureOutOfRangeError(
-        "Temperature $temperature K is out of valid range for species '$species_name'",
-        temperature,
-        species_name,
-    )
+function TemperatureOutOfRangeError(
+    temperature::Float64,
+    species_name::AbstractString,
+    temp_bounds::Union{Tuple{Float64, Float64}, Nothing} = nothing,
+)
+    msg = "Temperature $temperature K is out of valid range for species '$species_name'"
+    if temp_bounds !== nothing
+        msg *= " (valid range: $(temp_bounds[1])–$(temp_bounds[2]) K)"
+    end
+    return TemperatureOutOfRangeError(msg, temperature, String(species_name), temp_bounds)
 end
 function Base.showerror(io::IO, e::TemperatureOutOfRangeError)
     print(io, "TemperatureOutOfRangeError: ", e.msg)
@@ -186,6 +220,152 @@ struct DatabaseStats
     total_coeff_sets::Int
     species_by_phase::Dict{String, Int}
     avg_molecular_weight::Union{Float64, Nothing}
+end
+
+"""
+    SpeciesData
+
+Complete record of a species: identification metadata plus every temperature
+interval with its NASA-7 coefficients.
+
+Returned by `get_species_data`. Field access is the recommended form
+(`data.name`, `data.intervals`); dictionary-style access (`data["name"]`) is
+kept for backwards compatibility with versions that returned a `Dict`.
+"""
+struct SpeciesData
+    id::Int
+    name::String
+    formula::Union{String, Nothing}
+    comments::Union{String, Nothing}
+    reference_code::Union{String, Nothing}
+    phase::String
+    molecular_weight::Union{Float64, Nothing}
+    heat_of_formation_298K::Union{Float64, Nothing}
+    num_intervals::Int
+    intervals::Vector{IntervalData}
+end
+
+"""
+    to_dict(data::SpeciesData) -> Dict{String, Any}
+
+Return a `SpeciesData` as a plain `Dict`, matching the pre-0.5.0 return shape.
+"""
+function to_dict(data::SpeciesData)
+    return Dict{String, Any}(
+        "id" => data.id,
+        "name" => data.name,
+        "formula" => data.formula,
+        "comments" => data.comments,
+        "reference_code" => data.reference_code,
+        "phase" => data.phase,
+        "molecular_weight" => data.molecular_weight,
+        "heat_of_formation_298K" => data.heat_of_formation_298K,
+        "num_intervals" => data.num_intervals,
+        "intervals" => data.intervals,
+    )
+end
+
+# Backwards compatibility: `get_species_data` used to return a Dict.
+function Base.getindex(data::SpeciesData, key::AbstractString)
+    key == "id" && return data.id
+    key == "name" && return data.name
+    key == "formula" && return data.formula
+    key == "comments" && return data.comments
+    key == "reference_code" && return data.reference_code
+    key == "phase" && return data.phase
+    key == "molecular_weight" && return data.molecular_weight
+    key == "heat_of_formation_298K" && return data.heat_of_formation_298K
+    key == "num_intervals" && return data.num_intervals
+    key == "intervals" && return data.intervals
+    throw(KeyError(key))
+end
+
+Base.keys(::SpeciesData) = (
+    "id",
+    "name",
+    "formula",
+    "comments",
+    "reference_code",
+    "phase",
+    "molecular_weight",
+    "heat_of_formation_298K",
+    "num_intervals",
+    "intervals",
+)
+
+"""
+    Mixture
+
+A fixed-composition mixture defined by mole fractions.
+
+`species` holds `(species_id, mole_fraction)` tuples. Call `validate` to check
+that the composition is self-consistent before using it.
+"""
+struct Mixture
+    species::Vector{Tuple{Int, Float64}}
+
+    # Explicit inner constructor: prevents Julia from generating the generic
+    # `Mixture(::Any)` constructor, which the outer constructor below would
+    # otherwise overwrite.
+    Mixture(species::Vector{Tuple{Int, Float64}}) = new(species)
+end
+
+"""
+    Mixture(comps)
+
+Build a `Mixture` from any iterable of `(species_id, mole_fraction)` pairs,
+such as a tuple of tuples, a vector, or a generator.
+"""
+function Mixture(comps::Union{Tuple, AbstractVector})
+    return Mixture(Tuple{Int, Float64}[(Int(id), Float64(x)) for (id, x) in comps])
+end
+
+"""
+    validate(mixture::Mixture; tol=1e-9)
+
+Check that the mixture is non-empty, has no duplicate species IDs, has
+non-negative fractions, and that the mole fractions sum to 1 within `tol`.
+
+Throws `CompositionError` on the first failed check.
+"""
+function validate(mixture::Mixture; tol::Float64 = 1e-9)
+    isempty(mixture.species) && throw(CompositionError("mixture has no species"))
+
+    seen = Set{Int}()
+    total = 0.0
+    for (species_id, fraction) in mixture.species
+        species_id in seen &&
+            throw(CompositionError("duplicate species ID $species_id in mixture"))
+        push!(seen, species_id)
+        fraction < 0.0 && throw(
+            CompositionError("negative mole fraction $fraction for species ID $species_id"),
+        )
+        total += fraction
+    end
+
+    if abs(total - 1.0) > tol
+        throw(CompositionError("mole fractions must sum to 1.0 (got $total)"))
+    end
+    return nothing
+end
+
+"""
+    MixedProperties
+
+Thermochemical properties of a mixture at a single temperature, on both a molar
+(per mole of mixture) and a mass (per kilogram of mixture) basis.
+
+`molar_mass` is the mole-fraction-weighted mean molar mass in kg/mol.
+"""
+struct MixedProperties
+    temperature::Float64
+    cp_molar::Float64
+    h_molar::Float64
+    s_molar::Float64
+    molar_mass::Float64
+    cp_mass::Float64
+    h_mass::Float64
+    s_mass::Float64
 end
 
 # ------------------------------------------------------------------
@@ -512,10 +692,13 @@ function list_all_species(tdb::ThermoDB)
 end
 
 """
-    get_species_data(tdb::ThermoDB, species_id::Int) -> Union{Dict, Nothing}
+    get_species_data(tdb::ThermoDB, species_id::Int) -> Union{SpeciesData, Nothing}
 
 Get complete data for a species including all its temperature intervals
 and polynomial coefficients.
+
+Returns a typed [`SpeciesData`](@ref), or `nothing` when the ID is unknown.
+Dictionary-style access (`data["name"]`) remains supported for compatibility.
 """
 function get_species_data(tdb::ThermoDB, species_id::Int)
     # Species basic info
@@ -530,12 +713,12 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
     )
 
     # Get first row (avoid collect which returns missing)
-    data = nothing
+    row_data = nothing
     for row in result
-        data = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+        row_data = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
         break
     end
-    if data === nothing
+    if row_data === nothing
         return nothing
     end
 
@@ -556,9 +739,22 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
     )
 
     intervals = [_row_to_intervaldata(r) for r in int_result]
-    data["intervals"] = intervals
 
-    return data
+    _str_or_nothing(x) = x === nothing || ismissing(x) ? nothing : String(x)
+    _float_or_nothing(x) = x === nothing || ismissing(x) ? nothing : Float64(x)
+
+    return SpeciesData(
+        Int(row_data["id"]),
+        String(row_data["name"]),
+        _str_or_nothing(get(row_data, "formula", nothing)),
+        _str_or_nothing(get(row_data, "comments", nothing)),
+        _str_or_nothing(get(row_data, "reference_code", nothing)),
+        String(row_data["phase"]),
+        _float_or_nothing(get(row_data, "molecular_weight", nothing)),
+        _float_or_nothing(get(row_data, "heat_of_formation_298K", nothing)),
+        Int(get(row_data, "num_intervals", 0)),
+        intervals,
+    )
 end
 
 """
@@ -689,8 +885,13 @@ Base.@deprecate calculate_s(coeffs::Dict, T::Float64) calculate_s(NASACoefficien
 
 # Export public symbols (used by parent module Glenn)
 export ThermoCalcError,
-    DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
-export NASACoefficients, SpeciesInfo, IntervalData, DatabaseStats
+    ThermoError,
+    DatabaseNotConnectedError,
+    SpeciesNotFoundError,
+    TemperatureOutOfRangeError,
+    CompositionError
+export NASACoefficients, SpeciesInfo, SpeciesData, IntervalData, DatabaseStats
+export Mixture, MixedProperties, to_dict, validate
 export ThermoDB, R_UNIVERSAL, R_GLENN
 export get_gas_constant_ref
 

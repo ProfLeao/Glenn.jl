@@ -165,18 +165,13 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
     # Lightweight lookup: only need name & phase, not all intervals/coeffs
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found in database"))
+        throw(SpeciesNotFoundError(species_id))
     end
 
     interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
 
     if interval_data === nothing
-        throw(
-            ThermoCalcError(
-                "Temperature $T K is out of valid range for '$(info.name)'. " *
-                "Use get_species_data($species_id) to check available intervals.",
-            ),
-        )
+        throw(TemperatureOutOfRangeError(T, info.name))
     end
 
     cp_r = ThermoDatabase.calculate_cp(interval_data.coefficients, T)
@@ -217,15 +212,15 @@ function calculate_properties(
 )
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found in database"))
+        throw(SpeciesNotFoundError(species_id))
     end
 
     # Load ALL intervals for this species (single query)
     species_data = ThermoDatabase.get_species_data(calc.db, species_id)
     if species_data === nothing
-        throw(ThermoCalcError("Species ID $species_id has no data"))
+        throw(SpeciesNotFoundError(species_id))
     end
-    intervals = species_data["intervals"]  # Vector{IntervalData}
+    intervals = species_data.intervals  # Vector{IntervalData}
     R = calc.R_ref   # dataset reference gas constant
 
     results = ThermoProperties[]
@@ -276,7 +271,7 @@ Throws `SpeciesNotFoundError` if the species ID is invalid.
 function calculate_formation_enthalpy(calc::Calculator, species_id::Int)
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found"))
+        throw(SpeciesNotFoundError(species_id))
     end
     hf = info.heat_of_formation_298K
     if hf === nothing || ismissing(hf)
