@@ -50,7 +50,7 @@ module Glenn
 
 Package version string.
 """
-const __version__ = "0.4.1"
+const __version__ = "0.5.0"
 
 """
     Glenn.__author__
