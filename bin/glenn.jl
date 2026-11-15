@@ -31,5 +31,7 @@ catch
     using Glenn
 end
 
-# Forward all arguments to the CLI
-Glenn.cli_main()
+# Forward all arguments to the CLI and propagate the exit status
+#   julia --project bin/glenn.jl validate -d thermo.db
+#   julia --project bin/glenn.jl migrate-metadata -d legacy.db
+exit(Glenn.cli_main())

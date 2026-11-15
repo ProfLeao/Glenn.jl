@@ -18,16 +18,20 @@ makedocs(
     ),
     pages = [
         "Home" => "index.md",
+        "Cheat Sheet" => "cheat_sheet.md",
         "API Reference" => [
             "Calculator" => "calculator.md",
             "Database" => "database.md",
             "Builder" => "builder.md",
+            "Fitting" => "fitting.md",
             "CLI" => "cli.md",
         ],
         "Examples" => [
             "Basic Usage" => "examples/basic_usage.md",
             "Fuel Comparison" => "examples/fuel_comparison.md",
         ],
+        "Validation" => "validation.md",
+        "Migrating to 0.5.0" => "migration.md",
     ],
     warnonly = [:missing_docs, :cross_references],
 )

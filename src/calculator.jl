@@ -165,16 +165,17 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
     # Lightweight lookup: only need name & phase, not all intervals/coeffs
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found in database"))
+        throw(SpeciesNotFoundError(species_id))
     end
 
     interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
 
     if interval_data === nothing
         throw(
-            ThermoCalcError(
-                "Temperature $T K is out of valid range for '$(info.name)'. " *
-                "Use get_species_data($species_id) to check available intervals.",
+            TemperatureOutOfRangeError(
+                T,
+                info.name,
+                ThermoDatabase.get_temperature_bounds(calc.db, species_id),
             ),
         )
     end
@@ -198,35 +199,44 @@ function calculate_properties(calc::Calculator, species_id::Int, T::Float64)
 end
 
 """
-    calculate_properties(calc::Calculator, species_id::Int,
-                         T_range::AbstractVector{<:Real}) -> Vector{ThermoProperties}
+    calculate_properties_range(calc::Calculator, species_id::Int, T_range;
+                               strict::Bool=false) -> Vector{ThermoProperties}
 
-Vectorized: calculate thermochemical properties for multiple temperatures.
+Calculate thermochemical properties for many temperatures at once.
 
-Loads coefficients once from the database and evaluates the polynomial
-for each temperature in memory — much faster than calling the scalar
-version in a loop.
+The species' intervals are loaded with a single query and the polynomials are
+evaluated in memory, which is much faster than calling the scalar
+`calculate_properties` in a loop. Input order is preserved.
+
+Temperatures outside the species' valid intervals are skipped when
+`strict=false` (default). With `strict=true` the first out-of-range temperature
+raises `TemperatureOutOfRangeError`.
 
 Throws `SpeciesNotFoundError` if the species ID is invalid.
-Skips temperatures outside valid intervals (returns only valid results).
 """
-function calculate_properties(
+function calculate_properties_range(
     calc::Calculator,
     species_id::Int,
-    T_range::AbstractVector{<:Real},
+    T_range::AbstractVector{<:Real};
+    strict::Bool = false,
 )
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found in database"))
+        throw(SpeciesNotFoundError(species_id))
     end
 
     # Load ALL intervals for this species (single query)
     species_data = ThermoDatabase.get_species_data(calc.db, species_id)
     if species_data === nothing
-        throw(ThermoCalcError("Species ID $species_id has no data"))
+        throw(SpeciesNotFoundError(species_id))
     end
-    intervals = species_data["intervals"]  # Vector{IntervalData}
+    intervals = species_data.intervals  # Vector{IntervalData}
     R = calc.R_ref   # dataset reference gas constant
+
+    bounds = nothing
+    if strict
+        bounds = ThermoDatabase.get_temperature_bounds(calc.db, species_id)
+    end
 
     results = ThermoProperties[]
     sizehint!(results, length(T_range))
@@ -241,7 +251,10 @@ function calculate_properties(
                 break
             end
         end
-        interval_data === nothing && continue  # skip out-of-range
+        if interval_data === nothing
+            strict && throw(TemperatureOutOfRangeError(Tf, info.name, bounds))
+            continue  # skip out-of-range
+        end
 
         cp_r = ThermoDatabase.calculate_cp(interval_data.coefficients, Tf)
         h_rt = ThermoDatabase.calculate_h(interval_data.coefficients, Tf)
@@ -266,6 +279,23 @@ function calculate_properties(
 end
 
 """
+    calculate_properties(calc::Calculator, species_id::Int,
+                         T_range::AbstractVector{<:Real}) -> Vector{ThermoProperties}
+
+Vectorized form of `calculate_properties`, kept for convenience.
+
+Equivalent to [`calculate_properties_range`](@ref) with `strict=false`:
+temperatures outside the valid intervals are skipped.
+"""
+function calculate_properties(
+    calc::Calculator,
+    species_id::Int,
+    T_range::AbstractVector{<:Real},
+)
+    return calculate_properties_range(calc, species_id, T_range)
+end
+
+"""
     calculate_formation_enthalpy(calc::Calculator, species_id::Int) -> Union{Float64, Nothing}
 
 Return the enthalpy of formation at 298.15 K (J/mol).
@@ -276,7 +306,7 @@ Throws `SpeciesNotFoundError` if the species ID is invalid.
 function calculate_formation_enthalpy(calc::Calculator, species_id::Int)
     info = ThermoDatabase.get_species_info(calc.db, species_id)
     if info === nothing
-        throw(ThermoCalcError("Species ID $species_id not found"))
+        throw(SpeciesNotFoundError(species_id))
     end
     hf = info.heat_of_formation_298K
     if hf === nothing || ismissing(hf)
@@ -305,19 +335,197 @@ function calculate_enthalpy_change(
 end
 
 """
-    get_properties_range(calc::Calculator, species_id::Int,
-                         T_range::AbstractVector{<:Real}) -> Vector{ThermoProperties}
+    h_sensible_to(calc::Calculator, species_id::Int, T::Float64,
+                  t_ref::Float64=298.15) -> Float64
 
-Calculate thermochemical properties over a range of temperatures.
+Sensible enthalpy ΔH = H(T) − H(t_ref), in J/mol.
 
-Delegates to the vectorized `calculate_properties` for efficiency.
+Convenience wrapper around `calculate_enthalpy_change` with a default reference
+temperature of 298.15 K.
 """
-function get_properties_range(
+function h_sensible_to(
+    calc::Calculator,
+    species_id::Int,
+    T::Float64,
+    t_ref::Float64 = 298.15,
+)
+    return calculate_enthalpy_change(calc, species_id, t_ref, T)
+end
+
+"""
+    dcp_dt(calc::Calculator, species_id::Int, T::Float64) -> Float64
+
+Analytical temperature derivative of the heat capacity at `T`, in
+J/(mol·K²).
+
+The NASA-7 polynomial is differentiated term by term and denormalised with the
+dataset reference gas constant:
+
+```math
+\\frac{dC_p}{dT} = R_0 \\left( -\\frac{2a_1}{T^3} - \\frac{a_2}{T^2}
++ a_4 + 2a_5 T + 3a_6 T^2 + 4a_7 T^3 \\right)
+```
+
+Throws `SpeciesNotFoundError` for an invalid ID and
+`TemperatureOutOfRangeError` outside the species' intervals.
+"""
+function dcp_dt(calc::Calculator, species_id::Int, T::Float64)
+    info = ThermoDatabase.get_species_info(calc.db, species_id)
+    if info === nothing
+        throw(SpeciesNotFoundError(species_id))
+    end
+
+    interval_data = ThermoDatabase.get_species_for_temperature(calc.db, species_id, T)
+    if interval_data === nothing
+        throw(
+            TemperatureOutOfRangeError(
+                T,
+                info.name,
+                ThermoDatabase.get_temperature_bounds(calc.db, species_id),
+            ),
+        )
+    end
+
+    c = interval_data.coefficients
+    dcp_r =
+        -2.0 * c.a1 / T^3 - c.a2 / T^2 + c.a4 +
+        2.0 * c.a5 * T + 3.0 * c.a6 * T^2 + 4.0 * c.a7 * T^3
+    return dcp_r * calc.R_ref
+end
+
+"""
+    gamma(calc::Calculator, species_id::Int, T::Float64) -> Float64
+
+Ratio of specific heats `Cp/Cv` at `T`, assuming an ideal gas (`Cv = Cp - R`).
+
+Not exported, because `gamma` is also the name of a well-known special function
+(SpecialFunctions.jl); call it as `Glenn.gamma(calc, id, T)`.
+
+Throws `SpeciesNotFoundError`, `TemperatureOutOfRangeError`, or `ThermoError`
+when `Cp <= R` (which would make the ratio undefined).
+"""
+function gamma(calc::Calculator, species_id::Int, T::Float64)
+    props = calculate_properties(calc, species_id, T)
+    cv = props.cp - calc.R_ref
+    if cv <= 0.0
+        throw(
+            ThermoCalcError(
+                "Cp ($(props.cp) J/(mol·K)) is not greater than R_ref " *
+                "($(calc.R_ref) J/(mol·K)) for '$(props.species_name)' at $T K; " *
+                "Cp/Cv is undefined",
+            ),
+        )
+    end
+    return props.cp / cv
+end
+
+"""
+    mixture_properties(calc::Calculator, mixture::Mixture, T::Float64;
+                       strict::Bool=true) -> MixedProperties
+
+Properties of a mixture with a known composition at temperature `T`.
+
+No chemical equilibrium is solved: the composition is an input. Molar
+properties are the mole-fraction-weighted sum of the components' properties;
+mass properties divide them by the mole-fraction-weighted mean molar mass
+`M = Σ xᵢ Mᵢ`.
+
+With `strict=true` (default) any component outside its valid temperature range
+raises `TemperatureOutOfRangeError`. With `strict=false` those components are
+skipped, the remaining mole fractions are renormalised, and a warning is logged.
+
+Throws `CompositionError` for an invalid composition or a component without a
+usable molecular weight, and `SpeciesNotFoundError` for an unknown component.
+"""
+function mixture_properties(
+    calc::Calculator,
+    mixture::Mixture,
+    T::Float64;
+    strict::Bool = true,
+)
+    validate(mixture)
+
+    comps = Tuple{Float64, ThermoProperties, Float64}[]
+    skipped = String[]
+
+    for (species_id, fraction) in mixture.species
+        info = ThermoDatabase.get_species_info(calc.db, species_id)
+        if info === nothing
+            throw(SpeciesNotFoundError(species_id))
+        end
+
+        mw = info.molecular_weight
+        if mw === nothing || ismissing(mw) || mw <= 0.0
+            throw(
+                CompositionError(
+                    "species '$(info.name)' (id $species_id) has no valid molecular weight",
+                ),
+            )
+        end
+
+        props = try
+            calculate_properties(calc, species_id, T)
+        catch e
+            if e isa TemperatureOutOfRangeError && !strict
+                push!(skipped, info.name)
+                continue
+            end
+            rethrow()
+        end
+
+        push!(comps, (fraction, props, Float64(mw) / 1000.0))
+    end
+
+    if isempty(comps)
+        throw(TemperatureOutOfRangeError(T, "mixture", nothing))
+    end
+
+    if !isempty(skipped)
+        total_x = sum(first, comps)
+        comps = [(x / total_x, p, m) for (x, p, m) in comps]
+        @warn "mixture_properties skipped out-of-range components at $T K and " *
+              "renormalised the remaining mole fractions" skipped
+    end
+
+    molar_mass = sum(x * m for (x, _, m) in comps)
+    cp_molar = sum(x * p.cp for (x, p, _) in comps)
+    h_molar = sum(x * p.h_relative for (x, p, _) in comps)
+    s_molar = sum(x * p.s for (x, p, _) in comps)
+
+    return MixedProperties(
+        T,
+        cp_molar,
+        h_molar,
+        s_molar,
+        molar_mass,
+        cp_molar / molar_mass,
+        h_molar / molar_mass,
+        s_molar / molar_mass,
+    )
+end
+
+"""
+    get_temperature_bounds(calc::Calculator, species_id::Int) -> Union{Tuple{Float64, Float64}, Nothing}
+
+Overall `(T_min, T_max)` covered by a species, or `nothing` when the species has
+no intervals. Convenience method of
+[`Glenn.ThermoDatabase.get_temperature_bounds`](@ref) for the high-level API.
+"""
+function ThermoDatabase.get_temperature_bounds(calc::Calculator, species_id::Int)
+    return ThermoDatabase.get_temperature_bounds(calc.db, species_id)
+end
+
+# Deprecated 0.4.x name, kept for backwards compatibility.
+# (`Base.@deprecate` expands to an `export` plus a method definition, so it
+# cannot carry a docstring.)
+Base.@deprecate get_properties_range(
     calc::Calculator,
     species_id::Int,
     T_range::AbstractVector{<:Real},
+) calculate_properties_range(
+    calc,
+    species_id,
+    T_range,
 )
-    return calculate_properties(calc, species_id, T_range)
-end
 
 end # module ThermoCalculator

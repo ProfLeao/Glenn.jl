@@ -1,9 +1,10 @@
 name = "Glenn"
 uuid = "d531567c-0c1c-43c6-9163-287e3bec9c15"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["Reginaldo Leão"]
 
 [deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"

@@ -24,7 +24,7 @@ builder and CLI are available when you need to create or inspect a database.
 - Build databases from NASA FORTRAN `thermo.inp` files
 - Command-line interface (`build` and `query`)
 - **NIST-JANAF cross-validation** — validated against reference data for 7 species (CO₂, N₂, CO, H₂O, O₂, NH₃, SO₂)
-- ~2030 species, 3772 temperature intervals
+- ~2035 species, 3795 temperature intervals
 - Full [Documenter.jl](https://documenter.juliadocs.org) documentation
 
 ## Installation
@@ -88,8 +88,8 @@ end
 ### Building a database
 
 > **⚠️ You do NOT need to build the database for normal use.**
-> The package ships with a pre-built `thermo.db` containing ~2030 species
-> and 3772 temperature intervals. `Calculator()` uses it automatically.
+> The package ships with a pre-built `thermo.db` containing 2035 species
+> and 3795 temperature intervals. `Calculator()` uses it automatically.
 
 You only need to rebuild the database in these situations:
 
@@ -104,19 +104,23 @@ You only need to rebuild the database in these situations:
 using Glenn
 
 # Build from the bundled thermo.inp (shipped with the package)
-builder = ThermoDBBuilder(default_inp_path(), "thermo.db")
-connect(builder)
-create_tables(builder)
-parse_and_load(builder)
-close(builder)
+build_database(default_inp_path(), "thermo.db")
 
 # Build from a custom FORTRAN file
-builder = ThermoDBBuilder("my_thermo.inp", "my_thermo.db")
-# ... same connect -> create_tables -> parse_and_load -> close cycle
+build_database("my_thermo.inp", "my_thermo.db")
 ```
 
 The builder is only needed for a custom or regenerated dataset. The bundled
 database should be used for normal calculations.
+
+To regenerate the bundled database reproducibly — with integrity checks and
+release gates (expected species, intervals and coefficient sets) — use the
+rebuild script. It writes next to the target and only replaces it after every
+check passes:
+
+```bash
+julia --project=. scripts/rebuild_database.jl
+```
 
 ### CLI
 
@@ -131,20 +135,34 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CO2
 # Or use the convenience script
 julia --project bin/glenn.jl query -s O2
 
+# Integrity checks and legacy-database migration
+julia --project bin/glenn.jl validate
+julia --project bin/glenn.jl migrate-metadata -d legacy.db
+
 # Database rebuild (only if needed — see section above)
 julia --project -e 'using Glenn; Glenn.cli_main()' -- build
 julia --project bin/glenn.jl build -i custom.inp -o custom.db
 ```
+
+`cli_main` returns `0` on success and `1` on failure, and `bin/glenn.jl`
+propagates it, so the CLI can gate a CI step.
 
 ### Validation
 
 Run the cross-validation audit to compare Glenn.jl against NIST-JANAF reference data:
 
 ```bash
-julia --project docs/audit/audit.jl
+julia --project=docs docs/audit/audit.jl
 ```
 
-Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary.txt` (aggregated statistics).
+Outputs: `glenn_vs_nist.csv` (point-by-point comparison),
+`validation_summary.txt` (aggregated statistics) and three SVG figures under
+`docs/src/assets/audit/`. The [validation page](https://profleao.github.io/Glenn.jl/validation/)
+reproduces the numbers and the plots.
+
+Cp and S° agree with NIST-JANAF to within 1.1% RMSE for all seven species; see
+the page for the per-species table and for what the comparison does *not*
+validate.
 
 ## API Reference
 
@@ -157,9 +175,14 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | `default_db_path()` | Resolve path to the bundled database |
 | `get_available_species(calc, pattern; exact_match)` | List/filter species |
 | `calculate_properties(calc, id, T)` | Compute Cp, H°, S° at T (K) → `ThermoProperties` |
+| `calculate_properties_range(calc, id, Ts; strict)` | Properties over many temperatures (skips out-of-range, or raises with `strict=true`) |
 | `calculate_formation_enthalpy(calc, id)` | ΔH°f at 298.15 K (J/mol) |
 | `calculate_enthalpy_change(calc, id, T1, T2)` | ΔH = H(T2) − H(T1) |
-| `get_properties_range(calc, id, Ts)` | Properties over multiple T |
+| `h_sensible_to(calc, id, T, t_ref=298.15)` | Sensible enthalpy H(T) − H(t_ref) |
+| `dcp_dt(calc, id, T)` | Analytical dCp/dT, J/(mol·K²) |
+| `Glenn.gamma(calc, id, T)` | Cp/Cv for an ideal gas (not exported) |
+| `mixture_properties(calc, mixture, T; strict)` | Mix properties on molar and mass basis → `MixedProperties` |
+| `get_properties_range(calc, id, Ts)` | **Deprecated** — use `calculate_properties_range` |
 | `close(calc)` | Close the connection |
 
 ### ThermoDBBuilder
@@ -167,9 +190,10 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | Function | Description |
 |---|---|
 | `ThermoDBBuilder(inp, db)` | Create a database builder |
-| `connect(builder)` | Open the SQLite database |
-| `create_tables(builder)` | Create normalized schema |
-| `parse_and_load(builder)` | Parse thermo.inp and populate DB |
+| `build_database(inp, db)` | Build a database in one call (recommended) |
+| `Glenn.connect(builder)` | Open the SQLite database |
+| `Glenn.create_tables(builder)` | Create normalized schema |
+| `Glenn.parse_and_load(builder)` | Parse thermo.inp and populate DB |
 | `close(builder)` | Close and commit |
 
 ### ThermoDatabase (low-level)
@@ -184,6 +208,7 @@ Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary
 | `list_species_page(tdb; page, page_size)` | Paginated species listing |
 | `get_species_data(tdb, id)` | Full species + intervals + coeffs |
 | `get_species_for_temperature(tdb, id, T)` | Interval valid for T |
+| `get_temperature_bounds(tdb, id)` | Overall (T_min, T_max) of a species |
 | `calculate_cp(coeffs, T)` | Cp/R (dimensionless), `coeffs::NASACoefficients` |
 | `calculate_h(coeffs, T)` | H/RT (dimensionless), `coeffs::NASACoefficients` |
 | `calculate_s(coeffs, T)` | S/R (dimensionless), `coeffs::NASACoefficients` |
@@ -223,15 +248,82 @@ from the NASA Glenn FORTRAN thermochemical tables.
 
 | Table | Records | Description |
 |---|---|---|
-| `species` | 2030 | Chemical species (name, formula, phase, MW, ΔH°f) |
-| `temperature_intervals` | 3772 | Valid T ranges per species |
-| `coefficients` | 3772 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
+| `species` | 2035 | Chemical species (name, formula, phase, MW, ΔH°f) |
+| `temperature_intervals` | 3795 | Valid T ranges per species |
+| `coefficients` | 3795 | NASA-7 polynomial coefficients (a1–a7, b1, b2) |
 | `file_metadata` | 1 | Global file metadata |
 | `metadata` | 2 | Dataset metadata (reference gas constant) |
+
+## Migrating from 0.4.x
+
+Version 0.5.0 fixes the bundled dataset and completes the reference API. Three
+things need attention:
+
+- **`get_species_data` returns a typed `SpeciesData`.** Indexing (`data["name"]`)
+  still works; `to_dict(data)` restores the old `Dict`.
+- **`ThermoCalcError` is now an abstract base type.** `ThermoCalcError("msg")`
+  still works and returns a `ThermoError`.
+- **Species `id` values shifted for 14 species.** Persist names, not IDs, and
+  resolve them with `get_available_species(..., exact_match=true)`.
+
+See the [migration guide](https://profleao.github.io/Glenn.jl/migration/) for
+before/after examples and a post-upgrade check script.
+
+## Compatibility
+
+[`COMPATIBILITY_CONTRACT.md`](COMPATIBILITY_CONTRACT.md) states exactly what the
+package promises to keep stable: the public API, units, the exception hierarchy,
+temperature and interval semantics, the numerical guarantees, the database
+schema, the CLI contract, the deprecation policy and the supported Julia
+versions. It also says what is explicitly *not* covered — species IDs, error
+message wording, performance, and anything underscore-prefixed.
+
+Read it before pinning Glenn.jl in a long-lived project: it is the document that
+tells you whether an upgrade can break you.
 
 ## Documentation
 
 Full documentation is available at [profleao.github.io/Glenn.jl/](https://profleao.github.io/Glenn.jl/).
+
+* **[Cheat sheet](docs/cheat_sheet/cheat_sheet.pdf)** — two-page printable reference
+* **[Validation against NIST-JANAF](https://profleao.github.io/Glenn.jl/validation/)** — plots and error tables
+* **[Migrating to 0.5.0](https://profleao.github.io/Glenn.jl/migration/)** — every breaking change, with before/after code
+* **[Compatibility contract](COMPATIBILITY_CONTRACT.md)** — what is stable and what is not
+
+## Citation
+
+If Glenn.jl contributes to a publication, please cite it. Machine-readable
+metadata lives in [`CITATION.cff`](CITATION.cff) (GitHub renders a *Cite this
+repository* button from it):
+
+```bibtex
+@software{Leao_Glenn_jl,
+  author  = {Le{\~a}o, Reginaldo G.},
+  title   = {Glenn.jl: NASA-7 thermochemical properties in Julia},
+  version = {0.5.0},
+  year    = {2026},
+  url     = {https://github.com/ProfLeao/Glenn.jl},
+  license = {MIT}
+}
+```
+
+Results obtained with the bundled coefficients should also cite the original
+data source:
+
+> McBride, B. J., Zehe, M. J., and Gordon, S. (2002). *NASA Glenn Coefficients
+> for Calculating Thermodynamic Properties of Individual Species.*
+> NASA/TP-2002-211556. NASA Glenn Research Center.
+
+See [`NOTICE`](NOTICE) for the complete attribution of data and third-party
+software.
+
+<!-- A DOI is minted by Zenodo when a release is tagged. Once the record exists,
+     enable the badge above the installation section and add the DOI to
+     CITATION.cff:
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+
+-->
 
 ## License
 

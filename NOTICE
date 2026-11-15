@@ -1,0 +1,87 @@
+Glenn.jl
+========
+
+Thermochemical properties (Cp, H°, S°) from NASA-7 polynomial coefficients
+stored in SQLite.
+
+Copyright (c) 2023-2026 Reginaldo G. Leão Jr.
+Licensed under the MIT License — see the LICENSE file.
+
+
+Project lineage
+---------------
+
+Glenn.jl is the Julia implementation of this library. Its Python counterpart,
+pyglenn (https://github.com/ProfLeao/pyglenn), is maintained by the same author
+and shares the same underlying dataset and the same NASA-7 evaluation
+conventions. The two projects are kept feature-compatible where the language
+allows, so results obtained with one can be reproduced with the other.
+
+Glenn.jl is an independent implementation: no source code from pyglenn is
+included in this repository.
+
+
+Thermodynamic data
+------------------
+
+The file `data/thermo.inp` and the derived database `data/thermo.db` are built
+from the thermodynamic database distributed with the NASA Glenn Computer
+Program for Calculating of Complex Chemical Equilibrium Compositions and
+Applications (CEA). That database is a work of the United States Government and
+is in the public domain; it is redistributed here unmodified, except for the
+parser fixes documented in `docs/PARSER_FIX_PORTING.md`.
+
+Please cite the original NASA sources when publishing results that rely on the
+bundled coefficients:
+
+  * McBride, B. J., Zehe, M. J., and Gordon, S. (2002).
+    NASA Glenn Coefficients for Calculating Thermodynamic Properties of
+    Individual Species. NASA/TP-2002-211556.
+    National Aeronautics and Space Administration, Glenn Research Center.
+
+  * Gordon, S., and McBride, B. J. (1994).
+    Computer Program for Calculation of Complex Chemical Equilibrium
+    Compositions and Applications. I. Analysis. NASA RP-1311.
+    National Aeronautics and Space Administration, Lewis Research Center.
+
+The identifier "NASA Glenn" is used descriptively to refer to the origin of the
+data. This project is not affiliated with, endorsed by, or sponsored by NASA.
+
+
+Validation reference data
+-------------------------
+
+The cross-validation script `docs/audit/audit.jl` compares computed properties
+against the NIST-JANAF Thermochemical Tables, 4th edition:
+
+  * Chase, M. W., Jr. (1998). NIST-JANAF Thermochemical Tables, 4th edition.
+    Journal of Physical and Chemical Reference Data, Monograph No. 9.
+    https://doi.org/10.18434/T42S31
+
+Only the Shomate coefficients needed to recompute the reference values are
+embedded in the script. No NIST data files are redistributed. NIST-JANAF data
+are works of the United States Government and are in the public domain.
+
+
+Third-party software
+--------------------
+
+Glenn.jl depends on the following packages, all distributed under the MIT
+License:
+
+  * SQLite.jl       — https://github.com/JuliaDatabases/SQLite.jl
+  * Logging.jl      — Julia standard library
+  * Printf.jl       — Julia standard library
+  * LinearAlgebra.jl— Julia standard library
+
+The documentation and test tooling additionally uses Documenter.jl, Plots.jl,
+Aqua.jl and JuliaFormatter.jl, also MIT licensed. These are development
+dependencies only and are not part of the runtime dependency graph of the
+package.
+
+
+Trademarks
+----------
+
+Julia is a trademark of the Julia Project. SQLite is in the public domain.
+All other trademarks are the property of their respective owners.

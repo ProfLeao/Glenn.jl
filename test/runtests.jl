@@ -207,11 +207,87 @@ function copy_to_disk(mem_db::SQLite.DB, disk_path::String)
     return disk_db
 end
 
+"""
+    make_thermo_inp(records) -> String
+
+Build a minimal FORTRAN `thermo.inp` from `(name, tmin, tmax[, mw[, phase]])`
+records, one temperature interval each. Allows several records to reuse the same
+species name, which is how `thermo.inp` encodes phase transitions.
+
+Fixed-width columns follow NASA FORTRAN Appendix C:
+
+* RECORD 1 — name (1–16), comments (19–80)
+* RECORD 2 — intervals (1–2), ref code (4–9), phase (51–52), MW (53–65), ΔH°f (66–80)
+* RECORD 3 — T_min (1–11), T_max (12–22), h_298→0 (66–80)
+* RECORDS 4–5 — coefficients in 16-character fields
+"""
+function make_thermo_inp(records)
+    coeffs_a = ["1.0D+00", "0.0D+00", "3.5D+00", "0.0D+00", "0.0D+00"]
+    coeffs_b = ["0.0D+00", "0.0D+00", "0.00000000D+00", "1.0D+02", "2.0D+01"]
+
+    lines = String[
+        "THERMO",
+        "   300.000   1000.000   5000.000   6000.000 9/09/04",
+    ]
+    for rec in records
+        name, tmin, tmax = rec[1], rec[2], rec[3]
+        mw = length(rec) >= 4 ? rec[4] : "31.9988"
+        phase_code = length(rec) >= 5 ? rec[5] : " 0"
+
+        # RECORD 1 — name (1-16) and comments (19-80)
+        push!(lines, rpad(name, 16) * "  " * rpad("Test species", 62))
+
+        # RECORD 2 — ref code (4-9), phase (51-52), MW (53-65), ΔH°f (66-80)
+        rec2 =
+            " 1" * " " * rpad("g 2/99", 6) * rpad("", 41) *
+            phase_code * rpad(mw, 13) * rpad("0.0", 15)
+        push!(lines, rpad(rec2, 80))
+
+        # RECORD 3 — T_min (1-11), T_max (12-22), h_298→0 (66-80)
+        rec3 = rpad(tmin, 11) * rpad(tmax, 11) * rpad("", 43) * rpad("8680.0", 15)
+        push!(lines, rpad(rec3, 80))
+
+        # RECORDS 4-5 — a1..a5 and a6, a7, -, b1, b2
+        push!(lines, join(lpad.(coeffs_a, 16)))
+        push!(lines, join(lpad.(coeffs_b, 16)))
+    end
+
+    return join(lines, "\n") * "\n"
+end
+
+"""
+    capture_output(f) -> (; status, out, err)
+
+Run `f`, capturing everything it prints to stdout and stderr plus its return
+value.
+"""
+function capture_output(f)
+    out_path, out_io = mktemp()
+    err_path, err_io = mktemp()
+    status = nothing
+    try
+        redirect_stdout(out_io) do
+            redirect_stderr(err_io) do
+                status = f()
+            end
+        end
+    finally
+        flush(out_io)
+        flush(err_io)
+    end
+    out = read(out_path, String)
+    err = read(err_path, String)
+    close(out_io)
+    close(err_io)
+    rm(out_path; force = true)
+    rm(err_path; force = true)
+    return (; status, out, err)
+end
+
 # ------------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------------
 @testset "Glenn.jl" begin
-
     # ==================================================================
     # Code quality (Aqua.jl)
     # ==================================================================
@@ -304,6 +380,103 @@ end
     end
 
     # ==================================================================
+    # v0.5.0 Phase 1 — exception hierarchy and models
+    # ==================================================================
+    @testset "Exception hierarchy" begin
+        # Every package error must be catchable through the abstract base.
+        @test Glenn.ThermoCalcError isa Type
+        @test Glenn.DatabaseNotConnectedError <: Glenn.ThermoCalcError
+        @test Glenn.SpeciesNotFoundError <: Glenn.ThermoCalcError
+        @test Glenn.TemperatureOutOfRangeError <: Glenn.ThermoCalcError
+        @test Glenn.CompositionError <: Glenn.ThermoCalcError
+        @test Glenn.ThermoError <: Glenn.ThermoCalcError
+        @test Glenn.ThermoCalcError <: Exception
+
+        # The concrete errors are themselves Exception subtypes.
+        for E in (
+            Glenn.DatabaseNotConnectedError,
+            Glenn.SpeciesNotFoundError,
+            Glenn.TemperatureOutOfRangeError,
+            Glenn.CompositionError,
+        )
+            @test E <: Exception
+        end
+
+        # Legacy constructor still works and yields a generic ThermoError.
+        generic = Glenn.ThermoCalcError("boom")
+        @test generic isa Glenn.ThermoError
+        @test generic.msg == "boom"
+        @test sprint(showerror, generic) == "ThermoCalcError: boom"
+
+        # Cold trap by the abstract type.
+        @test_throws Glenn.ThermoCalcError throw(Glenn.CompositionError("bad"))
+
+        # Bounds are carried when known and surfaced in the message.
+        no_bounds = Glenn.TemperatureOutOfRangeError(7000.0, "N2")
+        @test no_bounds.temp_bounds === nothing
+        @test occursin("7000.0", no_bounds.msg)
+        @test occursin("N2", no_bounds.msg)
+
+        with_bounds = Glenn.TemperatureOutOfRangeError(7000.0, "N2", (200.0, 6000.0))
+        @test with_bounds.temp_bounds == (200.0, 6000.0)
+        @test occursin("valid range", with_bounds.msg)
+
+        @test sprint(showerror, Glenn.CompositionError("oops")) == "CompositionError: oops"
+    end
+
+    @testset "Mixture validation" begin
+        # Accepted input shapes.
+        @test Glenn.Mixture(((1, 0.79), (2, 0.21))).species ==
+              [(1, 0.79), (2, 0.21)]
+        @test Glenn.Mixture([(1, 0.5), (2, 0.5)]).species == [(1, 0.5), (2, 0.5)]
+
+        valid = Glenn.Mixture(((1, 0.79), (2, 0.21)))
+        @test Glenn.validate(valid) === nothing
+
+        # Single species at x = 1.0 is valid.
+        @test Glenn.validate(Glenn.Mixture(((1, 1.0),))) === nothing
+
+        # Invalid compositions.
+        @test_throws Glenn.CompositionError Glenn.validate(Glenn.Mixture(()))
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 0.5), (1, 0.5))),
+        )
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 1.5), (2, -0.5))),
+        )
+        @test_throws Glenn.CompositionError Glenn.validate(
+            Glenn.Mixture(((1, 0.5), (2, 0.49))),
+        )
+
+        # Tolerance is configurable.
+        @test Glenn.validate(Glenn.Mixture(((1, 0.5), (2, 0.4999))); tol = 1e-3) === nothing
+    end
+
+    @testset "MixedProperties struct" begin
+        mix = Glenn.MixedProperties(
+            1000.0,
+            1100.0,
+            30000.0,
+            200.0,
+            0.0288,
+            38194.4,
+            1041666.7,
+            6944.4,
+        )
+        @test mix.temperature == 1000.0
+        @test mix.cp_molar == 1100.0
+        @test mix.molar_mass == 0.0288
+        @test mix.cp_mass == 38194.4
+    end
+
+    @testset "R compatibility alias" begin
+        @test Glenn.R == Glenn.R_UNIVERSAL
+        # Deliberately not exported: `R` is a very common local variable name.
+        @test !(:R in names(Glenn))
+        @test :R in names(Glenn; all = true)
+    end
+
+    # ==================================================================
     # Database queries (disk-based)
     # ==================================================================
     mem_db = setup_test_db()
@@ -356,6 +529,39 @@ end
         @test length(data["intervals"]) == 2
         @test data["intervals"][1].temp_min == 200.0
         @test data["intervals"][1].temp_max == 1000.0
+
+        # v0.5.0: get_species_data returns a typed SpeciesData
+        @test data isa Glenn.SpeciesData
+        @test data.name == "O2"
+        @test data.phase == "gas"
+        @test data.molecular_weight ≈ 31.9988
+        @test data.num_intervals == 2
+        @test length(data.intervals) == 2
+        @test data.intervals[1] isa Glenn.IntervalData
+        @test data.intervals[1].coefficients isa Glenn.NASACoefficients
+
+        # Legacy dict-style access is preserved for backwards compatibility.
+        @test data["phase"] == data.phase
+        @test data["intervals"] === data.intervals
+        @test Set(keys(data)) == Set((
+            "id",
+            "name",
+            "formula",
+            "comments",
+            "reference_code",
+            "phase",
+            "molecular_weight",
+            "heat_of_formation_298K",
+            "num_intervals",
+            "intervals",
+        ))
+        @test_throws KeyError data["nope"]
+
+        # to_dict reproduces the pre-0.5.0 return shape.
+        as_dict = Glenn.to_dict(data)
+        @test as_dict isa Dict{String, Any}
+        @test as_dict["name"] == "O2"
+        @test as_dict["intervals"] === data.intervals
 
         # Nonexistent species
         @test Glenn.get_species_data(tdb, 99999) === nothing
@@ -487,6 +693,144 @@ end
     end
 
     # ==================================================================
+    # NASA-7 fitting (v0.5.0 phase 4)
+    # ==================================================================
+    @testset "NASA-7 fitting" begin
+        # O2 low-temperature coefficients used as the "truth".
+        truth = Glenn.NASACoefficients(
+            -3.42556342e+04,
+            4.84700097e+02,
+            1.11901096e+00,
+            4.29388924e-03,
+            -6.83630052e-07,
+            -2.02337270e-09,
+            1.03904002e-12,
+            -3.39145487e+03,
+            1.84969947e+01,
+        )
+        Ts = collect(range(200.0, 1000.0, length=60))
+        cps = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Ts]
+
+        @testset "fit_nasa7 round-trip" begin
+            fit = Glenn.fit_nasa7(Ts, cps)
+            @test fit isa Glenn.NASACoefficients
+            for f in (:a1, :a2, :a3, :a4, :a5, :a6, :a7)
+                @test isapprox(getfield(fit, f), getfield(truth, f); rtol = 1e-8)
+            end
+            for T in (300.0, 500.0, 800.0)
+                @test Glenn.calculate_cp(fit, T) ≈ Glenn.calculate_cp(truth, T) rtol = 1e-9
+            end
+        end
+
+        @testset "fit_nasa7 enthalpy convention" begin
+            # H°(t_ref) == h_ref by construction: b1 is the enthalpy constant.
+            fit = Glenn.fit_nasa7(Ts, cps; t_ref = 298.15, h_ref = -74_800.0)
+            @test Glenn.calculate_h(fit, 298.15) * 298.15 * Glenn.R_GLENN ≈
+                  -74_800.0 rtol = 1e-12
+            # Anchoring the enthalpy does not disturb the a-coefficients.
+            @test isapprox(fit.a6, truth.a6; rtol = 1e-8)
+            @test isapprox(fit.a7, truth.a7; rtol = 1e-8)
+        end
+
+        @testset "fit_nasa7 entropy anchor" begin
+            fit = Glenn.fit_nasa7(Ts, cps; s_ref = 188.0)
+            @test Glenn.calculate_s(fit, 298.15) * Glenn.R_GLENN ≈ 188.0 rtol = 1e-12
+            @test fit.b2 != 0.0
+            # Without s_ref the entropy constant is zero.
+            @test Glenn.fit_nasa7(Ts, cps).b2 == 0.0
+        end
+
+        @testset "fit_nasa7 weights" begin
+            fit_w = Glenn.fit_nasa7(Ts, cps; weights = ones(length(Ts)))
+            fit_u = Glenn.fit_nasa7(Ts, cps)
+            @test isapprox(fit_w.a3, fit_u.a3; rtol = 1e-12)
+            @test isapprox(fit_w.a6, fit_u.a6; rtol = 1e-12)
+        end
+
+        @testset "fit_nasa7 input validation" begin
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts[1:5], cps[1:5])
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts, cps[1:10])
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                [-1.0; Ts[2:end]],
+                cps,
+            )
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts, cps; t_ref = 0.0)
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                Ts,
+                cps;
+                weights = fill(-1.0, length(Ts)),
+            )
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                Ts,
+                cps;
+                weights = zeros(length(Ts)),
+            )
+            # Repeated temperatures cannot determine seven coefficients.
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                fill(300.0, 10),
+                fill(30.0, 10),
+            )
+        end
+
+        @testset "fit_nasa7_multi continuity" begin
+            Tm = collect(range(300.0, 1500.0, length=60))
+            cpm = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Tm]
+            Tb = 900.0
+            fits = Glenn.fit_nasa7_multi(
+                Tm,
+                cpm,
+                [Tb];
+                t_ref = 298.15,
+                h_ref = 0.0,
+                s_ref = 180.0,
+            )
+
+            @test length(fits) == 2
+            @test all(f -> f isa Glenn.NASACoefficients, fits)
+
+            # Cp is continuous at the breakpoint, and so is its derivative.
+            @test Glenn.calculate_cp(fits[1], Tb) ≈ Glenn.calculate_cp(fits[2], Tb) rtol =
+                1e-8
+            h = 1.0e-4
+            d_left =
+                (Glenn.calculate_cp(fits[1], Tb) - Glenn.calculate_cp(fits[1], Tb - h)) / h
+            d_right =
+                (Glenn.calculate_cp(fits[2], Tb + h) - Glenn.calculate_cp(fits[2], Tb)) / h
+            @test d_left ≈ d_right rtol = 1e-2
+
+            # H° and S° are continuous across the breakpoint.
+            @test Glenn.calculate_h(fits[1], Tb) * Tb ≈
+                  Glenn.calculate_h(fits[2], Tb) * Tb rtol = 1e-9
+            @test Glenn.calculate_s(fits[1], Tb) ≈ Glenn.calculate_s(fits[2], Tb) rtol =
+                1e-9
+
+            # The anchors land in the interval that contains t_ref.
+            @test Glenn.calculate_h(fits[1], 298.15) * 298.15 * Glenn.R_GLENN ≈ 0.0 atol =
+                1e-6
+            @test Glenn.calculate_s(fits[1], 298.15) * Glenn.R_GLENN ≈ 180.0 rtol = 1e-12
+
+            # A single underlying polynomial is recovered in both intervals.
+            @test isapprox(fits[1].a3, truth.a3; rtol = 1e-6)
+            @test isapprox(fits[2].a3, truth.a3; rtol = 1e-6)
+        end
+
+        @testset "fit_nasa7_multi input validation" begin
+            Tm = collect(range(300.0, 1500.0, length=60))
+            cpm = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Tm]
+
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, Float64[])
+            # Breakpoints must lie strictly inside the temperature range.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [200.0])
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1600.0])
+            # Strictly increasing.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1000.0, 800.0])
+            # Every interval needs at least seven points.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1490.0])
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm[1:10], [1000.0])
+        end
+    end
+
+    # ==================================================================
     # Calculator (high-level API)
     # ==================================================================
     @testset "Calculator - High-level API" begin
@@ -595,6 +939,182 @@ end
         end
 
         @test connected_in_block
+    end
+
+    # ==================================================================
+    # Calculator - Phase 2 API (derivatives, mixtures, range, bounds)
+    # ==================================================================
+    @testset "Calculator - Phase 2 API" begin
+        calc = Glenn.Calculator(db_file)
+
+        @testset "Temperature bounds" begin
+            # O2 fixture: intervals 200-1000 and 1000-6000
+            @test Glenn.get_temperature_bounds(calc.db, 1) == (200.0, 6000.0)
+            @test Glenn.get_temperature_bounds(calc.db, 99999) === nothing
+
+            err = try
+                Glenn.calculate_properties(calc, 1, 7000.0)
+                nothing
+            catch e
+                e
+            end
+            @test err isa Glenn.TemperatureOutOfRangeError
+            @test err.temp_bounds == (200.0, 6000.0)
+            @test occursin("valid range", err.msg)
+        end
+
+        @testset "calculate_properties_range" begin
+            # Input order is preserved and valid points are kept.
+            props = Glenn.calculate_properties_range(calc, 1, [500.0, 298.15, 1500.0])
+            @test [p.temperature for p in props] == [500.0, 298.15, 1500.0]
+
+            # Non-strict skips out-of-range temperatures.
+            props = Glenn.calculate_properties_range(calc, 1, [100.0, 500.0, 9000.0])
+            @test [p.temperature for p in props] == [500.0]
+
+            # Strict raises on the first out-of-range temperature.
+            @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties_range(
+                calc,
+                1,
+                [500.0, 9000.0];
+                strict = true,
+            )
+
+            # Typed results match the scalar path exactly.
+            scalar = Glenn.calculate_properties(calc, 1, 500.0)
+            @test props[1] == scalar
+
+            # Deprecated 0.4.x alias still returns the same results.
+            @test Glenn.get_properties_range(calc, 1, [500.0, 1500.0]) ==
+                  Glenn.calculate_properties_range(calc, 1, [500.0, 1500.0])
+        end
+
+        @testset "h_sensible_to" begin
+            @test Glenn.h_sensible_to(calc, 1, 1000.0) ≈
+                  Glenn.calculate_enthalpy_change(calc, 1, 298.15, 1000.0)
+            # Default reference is 298.15 K.
+            @test Glenn.h_sensible_to(calc, 1, 1000.0) ≈
+                  Glenn.h_sensible_to(calc, 1, 1000.0, 298.15)
+            # Custom reference temperature.
+            @test Glenn.h_sensible_to(calc, 1, 1000.0, 300.0) ≈
+                  Glenn.calculate_enthalpy_change(calc, 1, 300.0, 1000.0)
+            @test Glenn.h_sensible_to(calc, 1, 500.0, 500.0) ≈ 0.0 atol = 1e-9
+        end
+
+        @testset "dcp_dt" begin
+            T = 500.0
+            analytic = Glenn.dcp_dt(calc, 1, T)
+            eps = 1.0e-3
+            cp_plus = Glenn.calculate_properties(calc, 1, T + eps).cp
+            cp_minus = Glenn.calculate_properties(calc, 1, T - eps).cp
+            @test analytic ≈ (cp_plus - cp_minus) / (2 * eps) rtol = 1e-3
+            @test isfinite(analytic)
+
+            @test_throws Glenn.SpeciesNotFoundError Glenn.dcp_dt(calc, 99999, T)
+            @test_throws Glenn.TemperatureOutOfRangeError Glenn.dcp_dt(calc, 1, 9000.0)
+        end
+
+        @testset "gamma" begin
+            # Not exported, to avoid clashing with SpecialFunctions.gamma, but
+            # reachable as Glenn.gamma.
+            @test !(:gamma in names(Glenn))
+            @test isdefined(Glenn, :gamma)
+            @test Glenn.gamma isa Function
+
+            T = 500.0
+            cp = Glenn.calculate_properties(calc, 1, T).cp
+            @test Glenn.gamma(calc, 1, T) ≈ cp / (cp - calc.R_ref)
+            # Diatomic ideal gas: Cp/Cv slightly above 7/5 at moderate T.
+            @test 1.2 < Glenn.gamma(calc, 1, T) < 1.5
+
+            @test_throws Glenn.SpeciesNotFoundError Glenn.gamma(calc, 99999, T)
+        end
+
+        Glenn.close(calc)
+
+        @testset "mixture_properties" begin
+            inp_mix = "test_mixture_thermo.inp"
+            db_mix = "test_mixture_thermo.db"
+            try
+                write(
+                    inp_mix,
+                    make_thermo_inp([
+                        ("AA", "200.0", "3000.0", "28.0000"),
+                        ("BB", "200.0", "6000.0", "32.0000"),
+                    ]),
+                )
+                Glenn.build_database(inp_mix, db_mix)
+
+                calc2 = Glenn.Calculator(db_mix)
+                aa = only(Glenn.get_available_species(calc2, "AA", exact_match = true))
+                bb = only(Glenn.get_available_species(calc2, "BB", exact_match = true))
+
+                mix = Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    1000.0,
+                )
+
+                # Mole-fraction-weighted mean molar mass, in kg/mol.
+                @test mix.molar_mass ≈ (0.5 * 28.0 + 0.5 * 32.0) / 1000.0
+                @test mix.temperature == 1000.0
+
+                # Mass basis is consistent with the molar basis.
+                @test mix.cp_mass ≈ mix.cp_molar / mix.molar_mass
+                @test mix.h_mass ≈ mix.h_molar / mix.molar_mass
+                @test mix.s_mass ≈ mix.s_molar / mix.molar_mass
+
+                # A single-species mixture reproduces the pure-species values.
+                pure_aa = Glenn.calculate_properties(calc2, aa.id, 1000.0)
+                single =
+                    Glenn.mixture_properties(calc2, Glenn.Mixture(((aa.id, 1.0),)), 1000.0)
+                @test single.cp_molar ≈ pure_aa.cp
+                @test single.h_molar ≈ pure_aa.h_relative
+                @test single.s_molar ≈ pure_aa.s
+                @test single.molar_mass ≈ 0.028
+
+                # Invalid compositions are rejected.
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (aa.id, 0.5))),
+                    1000.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.4))),
+                    1000.0,
+                )
+                @test_throws Glenn.SpeciesNotFoundError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((99999, 1.0),)),
+                    1000.0,
+                )
+
+                # BB is valid up to 6000 K, AA only up to 3000 K.
+                @test_throws Glenn.TemperatureOutOfRangeError Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    5000.0;
+                    strict = true,
+                )
+
+                # Non-strict skips AA and renormalises BB to x = 1.
+                partial = Glenn.mixture_properties(
+                    calc2,
+                    Glenn.Mixture(((aa.id, 0.5), (bb.id, 0.5))),
+                    5000.0;
+                    strict = false,
+                )
+                pure_bb = Glenn.calculate_properties(calc2, bb.id, 5000.0)
+                @test partial.cp_molar ≈ pure_bb.cp
+                @test partial.molar_mass ≈ 0.032
+
+                Glenn.close(calc2)
+            finally
+                rm(inp_mix, force = true)
+                rm(db_mix, force = true)
+            end
+        end
     end
 
     # ==================================================================
@@ -728,6 +1248,10 @@ end
                 [
                     "THERMO",
                     "   300.000   1000.000   5000.000",
+                    # Stray coefficient line before any species header: the
+                    # state machine must skip it instead of creating a bogus
+                    # species named after a FORTRAN number.
+                    "-1.302004763D+06 5.407120940D+02-1.596697810D+00 1.635207120D-03",
                     rec1,
                     rec2,
                     rec3,
@@ -743,11 +1267,7 @@ end
         try
             write(inp_path, inp_content)
 
-            builder = Glenn.ThermoDBBuilder(inp_path, db_path)
-            Glenn.ThermoBuilder.connect(builder)
-            Glenn.ThermoBuilder.create_tables(builder)
-            Glenn.ThermoBuilder.parse_and_load(builder)
-            Glenn.ThermoBuilder.close(builder)
+            Glenn.build_database(inp_path, db_path)
 
             @test isfile(db_path)
             @test filesize(db_path) > 0
@@ -757,11 +1277,50 @@ end
             stats = Glenn.get_statistics(tdb)
             @test stats.total_species == 1
             @test stats.total_intervals >= 1
+
+            # No species name may look like a FORTRAN coefficient token.
+            @test all(
+                s -> !occursin(r"\dD[+-]\d", s.name),
+                Glenn.list_all_species(tdb),
+            )
+
+            # The dataset reference constant is written inside the transaction.
+            @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN
             Glenn.ThermoDatabase.close(tdb)
         finally
             rm(inp_path, force = true)
             rm(db_path, force = true)
         end
+    end
+
+    # ==================================================================
+    # Builder - Species header detection (v0.5.0 phase 0)
+    # ==================================================================
+    @testset "Builder - Species header detection" begin
+        # Genuine species records
+        @test Glenn.ThermoBuilder.is_species_header(
+            "O2              Ref-1 O2 gas           ",
+        )
+        @test Glenn.ThermoBuilder.is_species_header(
+            "Cr(cr)            Below lambda trans. Ref-Elm.",
+        )
+        @test Glenn.ThermoBuilder.is_species_header(
+            "C2H5OH(L)         Gurvich,1989 pt1 p210 pt2 p201.",
+        )
+
+        # Coefficient lines fit inside the species-name field and were
+        # historically misparsed as species headers.
+        stray = "-1.302004763D+06 5.407120940D+02-1.596697810D+00"
+        @test Glenn.ThermoBuilder.is_coefficient_line(stray)
+        @test !Glenn.ThermoBuilder.is_species_header(stray)
+        @test !Glenn.ThermoBuilder.is_species_header(" 3.21225000D+00 1.12749000D-03")
+
+        # Temperature records are not species headers.
+        @test !Glenn.ThermoBuilder.is_species_header(" 2.0000E+02 1.0000E+03")
+
+        # Blank / multi-token names are rejected.
+        @test !Glenn.ThermoBuilder.is_species_header("")
+        @test !Glenn.ThermoBuilder.is_species_header("TOO  MANY TOKENS HERE")
     end
 
     # ==================================================================
@@ -788,6 +1347,482 @@ end
                 close(rd)
             end
             @test true  # No crash = pass
+        end
+    end
+
+    # ==================================================================
+    # CLI - Phase 5 commands (validate, migrate-metadata, version)
+    # ==================================================================
+    @testset "CLI - Phase 5 commands" begin
+        @testset "version and help" begin
+            r = capture_output(() -> Glenn.cli_main(["--version"]))
+            @test r.status == 0
+            @test occursin("Glenn.jl v", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(["-h"]))
+            @test r.status == 0
+            @test occursin("validate", r.out)
+            @test occursin("migrate-metadata", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(String[]))
+            @test r.status == 0
+            @test occursin("USAGE", r.out)
+        end
+
+        @testset "unknown arguments fail" begin
+            r = capture_output(() -> Glenn.cli_main(["bogus"]))
+            @test r.status == 1
+            @test occursin("Unknown command", r.err)
+
+            r = capture_output(() -> Glenn.cli_main(["--bogus"]))
+            @test r.status == 1
+            @test occursin("Unknown option", r.err)
+        end
+
+        @testset "validate" begin
+            r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_file]))
+            @test r.status == 0
+            @test occursin("[SUCCESS]", r.out)
+            @test occursin("Species:", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(["validate", "-d", "no_such.db"]))
+            @test r.status == 1
+            @test occursin("not found", r.err)
+        end
+
+        @testset "migrate-metadata and inconsistent database" begin
+            inp_c = "test_cli_thermo.inp"
+            db_c = "test_cli_thermo.db"
+            try
+                write(inp_c, make_thermo_inp([("AA", "200.0", "3000.0", "28.0000")]))
+                Glenn.build_database(inp_c, db_c)
+
+                # Missing reference constant is a warning, not a failure.
+                db = SQLite.DB(db_c)
+                try
+                    SQLite.execute(db, "DELETE FROM metadata")
+                finally
+                    SQLite.close(db)
+                end
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 0
+                @test occursin("gas_constant_ref", r.out)
+
+                # migrate-metadata restores it.
+                r = capture_output(
+                    () -> Glenn.cli_main(["migrate-metadata", "-d", db_c]),
+                )
+                @test r.status == 0
+                @test occursin("[SUCCESS]", r.out)
+                @test occursin("gas_constant_ref", r.out)
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 0
+                @test !occursin("[warn]", r.out)
+
+                # An inconsistent database must fail.
+                db = SQLite.DB(db_c)
+                try
+                    SQLite.execute(db, "UPDATE species SET num_intervals = 99")
+                finally
+                    SQLite.close(db)
+                end
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 1
+                @test occursin("[FAIL]", r.out)
+                @test occursin("num_intervals", r.out)
+            finally
+                rm(inp_c, force = true)
+                rm(db_c, force = true)
+            end
+        end
+    end
+
+    # ==================================================================
+    # Builder - Merged duplicate records (v0.5.0 phase 0)
+    # ==================================================================
+    @testset "Builder - Merged duplicate records" begin
+        inp_m = "test_merge_thermo.inp"
+        db_m = "test_merge_thermo.db"
+
+        try
+            # Same species name, two adjacent ranges (the Cr(cr) pattern).
+            write(
+                inp_m,
+                make_thermo_inp([("XX", "200.0", "1000.0"), ("XX", "1000.0", "2000.0")]),
+            )
+            Glenn.build_database(inp_m, db_m)
+
+            tdb = Glenn.ThermoDB(db_m)
+            stats = Glenn.get_statistics(tdb)
+            @test stats.total_species == 1
+            @test stats.total_intervals == 2
+
+            info = only(Glenn.list_all_species(tdb))
+            @test info.num_intervals == 2
+
+            data = Glenn.get_species_data(tdb, info.id)
+            @test [(iv.temp_min, iv.temp_max) for iv in data.intervals] ==
+                  [(200.0, 1000.0), (1000.0, 2000.0)]
+            Glenn.ThermoDatabase.close(tdb)
+
+            # merge_duplicates=false keeps the reference (first-only) behaviour.
+            rm(db_m; force = true)
+            Glenn.build_database(inp_m, db_m; merge_duplicates = false)
+            tdb = Glenn.ThermoDB(db_m)
+            @test Glenn.get_statistics(tdb).total_intervals == 1
+            Glenn.ThermoDatabase.close(tdb)
+
+            # An exact duplicate range is skipped, never stored twice.
+            rm(db_m; force = true)
+            write(
+                inp_m,
+                make_thermo_inp([("YY", "200.0", "1000.0"), ("YY", "200.0", "1000.0")]),
+            )
+            Glenn.build_database(inp_m, db_m)
+            tdb = Glenn.ThermoDB(db_m)
+            @test Glenn.get_statistics(tdb).total_intervals == 1
+            Glenn.ThermoDatabase.close(tdb)
+        finally
+            rm(inp_m, force = true)
+            rm(db_m, force = true)
+        end
+    end
+
+    # ==================================================================
+    # Bundled database (dataset release gates)
+    # ==================================================================
+    @testset "Bundled database" begin
+        db = Glenn.default_db_path()
+        @test isfile(db)
+
+        tdb = Glenn.ThermoDB(db)
+        stats = Glenn.get_statistics(tdb)
+
+        # Release gates for the canonical NASA Glenn/CEA dataset — keep in sync
+        # with scripts/rebuild_database.jl.
+        @test stats.total_species == 2035
+        @test stats.total_intervals == 3795
+        @test stats.total_coeff_sets == 3795
+
+        # The parser must never store FORTRAN tokens as species names.
+        names = [s.name for s in Glenn.list_all_species(tdb)]
+        @test isempty(filter(n -> occursin(r"\dD[+-]\d", n), names))
+
+        # Species recovered once the parser resynchronised correctly.
+        for name in ("C2H5OH(L)", "C6H6(L)", "CLO3F", "H2O2(L)", "JP-10(g)")
+            @test !isempty(Glenn.find_species(tdb, name; exact_match = true))
+        end
+
+        # Phase-transition records are merged, so condensed substances keep
+        # their complete temperature range (Cr(cr) below/above lambda).
+        cr = only(Glenn.find_species(tdb, "Cr(cr)"; exact_match = true))
+        cr_data = Glenn.get_species_data(tdb, cr.id)
+        @test length(cr_data.intervals) == 3
+        @test cr_data.num_intervals == 3
+        @test cr_data.intervals[1].temp_min == 200.0
+        @test cr_data.intervals[end].temp_max == 2130.0
+
+        # Dataset reference constant survives a rebuild.
+        @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN
+
+        # The shipped dataset passes every integrity check.
+        vreport = Glenn.validate_database(tdb)
+        @test vreport.valid
+        @test isempty(vreport.errors)
+        @test isempty(vreport.warnings)
+        @test vreport.counts["total_species"] == 2035
+
+        Glenn.ThermoDatabase.close(tdb)
+    end
+
+    # ==================================================================
+    # Database validation (v0.5.0 phase 3)
+    # ==================================================================
+    @testset "validate_database" begin
+        inp_v = "test_validate_thermo.inp"
+        db_v = "test_validate_thermo.db"
+
+        function mutate(sql)
+            db = SQLite.DB(db_v)
+            try
+                SQLite.execute(db, sql)
+            finally
+                SQLite.close(db)
+            end
+            return nothing
+        end
+
+        function rebuild_and_validate(; sql = nothing)
+            rm(db_v, force = true)
+            Glenn.build_database(inp_v, db_v)
+            sql === nothing || mutate(sql)
+            tdb = Glenn.ThermoDB(db_v)
+            try
+                return Glenn.validate_database(tdb)
+            finally
+                close(tdb)
+            end
+        end
+
+        try
+            write(inp_v, make_thermo_inp([("AA", "200.0", "3000.0", "28.0000")]))
+
+            report = rebuild_and_validate()
+            @test report isa Glenn.ValidationReport
+            @test report.valid
+            @test isempty(report.errors)
+            @test isempty(report.warnings)
+            @test report.counts["total_species"] == 1
+            @test report.counts["total_intervals"] == 1
+            @test report.counts["total_coeff_sets"] == 1
+            @test sprint(show, report) ==
+                  "ValidationReport(valid=true, errors=0, warnings=0)"
+
+            # num_intervals disagreeing with the stored rows
+            r = rebuild_and_validate(; sql = "UPDATE species SET num_intervals = 5")
+            @test !r.valid
+            @test any(e -> occursin("num_intervals", e), r.errors)
+
+            # Unordered bounds
+            r = rebuild_and_validate(
+                ;
+                sql = "UPDATE temperature_intervals SET temp_min = 5000.0",
+            )
+            @test !r.valid
+            @test any(e -> occursin("bounds", e), r.errors)
+
+            # Incomplete coefficient set
+            r = rebuild_and_validate(; sql = "UPDATE coefficients SET a1 = NULL")
+            @test !r.valid
+            @test any(e -> occursin("NULL", e), r.errors)
+
+            # A FORTRAN token must never be accepted as a species name
+            r = rebuild_and_validate(
+                ;
+                sql = "UPDATE species SET name = '-1.302004763D+06'",
+            )
+            @test !r.valid
+            @test any(e -> occursin("FORTRAN", e), r.errors)
+
+            # Orphan coefficient rows
+            r = rebuild_and_validate(; sql = "DELETE FROM temperature_intervals")
+            @test !r.valid
+            @test any(e -> occursin("missing interval", e), r.errors)
+
+            # Missing metadata is a warning, not an error
+            r = rebuild_and_validate(; sql = "DELETE FROM metadata")
+            @test r.valid
+            @test any(w -> occursin("gas_constant_ref", w), r.warnings)
+
+            # Missing required table is fatal and reports empty counts
+            rm(db_v, force = true)
+            raw = SQLite.DB(db_v)
+            try
+                SQLite.execute(
+                    raw,
+                    "CREATE TABLE species (id INTEGER PRIMARY KEY, name TEXT)",
+                )
+            finally
+                SQLite.close(raw)
+            end
+            tdb = Glenn.ThermoDB(db_v)
+            r = try
+                Glenn.validate_database(tdb)
+            finally
+                close(tdb)
+            end
+            @test !r.valid
+            @test any(e -> occursin("missing required table", e), r.errors)
+            @test isempty(r.counts)
+        finally
+            rm(inp_v, force = true)
+            rm(db_v, force = true)
+        end
+    end
+
+    # ==================================================================
+    # Edge cases and numerical identities (v0.5.0 phase 6)
+    # ==================================================================
+    @testset "Edge cases - interval boundaries" begin
+        calc = Glenn.Calculator(db_file)   # O2 fixture: 200-1000 and 1000-6000
+
+        # Exactly at both ends of the valid range
+        @test Glenn.calculate_properties(calc, 1, 200.0).cp > 0
+        @test Glenn.calculate_properties(calc, 1, 6000.0).cp > 0
+
+        # Just outside
+        @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties(
+            calc,
+            1,
+            199.9,
+        )
+        @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties(
+            calc,
+            1,
+            6000.1,
+        )
+
+        # A temperature shared by two intervals resolves to the lower one.
+        at_boundary = Glenn.calculate_properties(calc, 1, 1000.0)
+        @test (at_boundary.temp_min, at_boundary.temp_max) == (200.0, 1000.0)
+
+        below = Glenn.calculate_properties(calc, 1, 999.999)
+        above = Glenn.calculate_properties(calc, 1, 1000.001)
+        @test below.temp_max == 1000.0
+        @test above.temp_min == 1000.0
+        # Cp is continuous across the boundary
+        @test isapprox(above.cp, below.cp; rtol = 1e-4)
+
+        close(calc)
+    end
+
+    @testset "Edge cases - species lookup" begin
+        tdb = Glenn.ThermoDB(Glenn.default_db_path())
+        try
+            # The bundled dataset has many names containing "N2".
+            substring = Glenn.find_species(tdb, "N2")
+            exact = Glenn.find_species(tdb, "N2"; exact_match = true)
+            @test length(substring) > 1
+            @test length(exact) == 1
+            @test exact[1].name == "N2"
+            # Exact matches are prioritised in substring results.
+            @test substring[1].name == "N2"
+
+            # exact_match is case-insensitive...
+            @test only(Glenn.find_species(tdb, "n2"; exact_match = true)).name == "N2"
+            # ...so it can still return several species when names differ only
+            # by case: CO (carbon monoxide) and Co (cobalt).
+            co = Glenn.find_species(tdb, "CO"; exact_match = true)
+            @test length(co) >= 2
+            @test "CO" in [s.name for s in co]
+            @test "Co" in [s.name for s in co]
+
+            # Unknown species returns an empty vector, never an error
+            @test isempty(Glenn.find_species(tdb, "XYZ123"; exact_match = true))
+            @test isempty(Glenn.find_species(tdb, "XYZ123"))
+        finally
+            Glenn.ThermoDatabase.close(tdb)
+        end
+    end
+
+    @testset "Numerical identities" begin
+        calc = Glenn.Calculator(Glenn.default_db_path())
+        try
+            # NASA-7 convention: H°(298.15 K) equals the stored ΔH°f.
+            for name in ("CH4", "CO2", "H2O", "NH3")
+                sp = only(Glenn.get_available_species(calc, name; exact_match = true))
+                hf = Glenn.calculate_formation_enthalpy(calc, sp.id)
+                h298 =
+                    Glenn.calculate_properties(calc, sp.id, 298.15).h_relative
+                @test isapprox(h298, hf; atol = 1.0e-2)
+            end
+
+            # ΔH°f + sensible enthalpy == absolute enthalpy H°(T)
+            sp = only(Glenn.get_available_species(calc, "CH4"; exact_match = true))
+            hf = Glenn.calculate_formation_enthalpy(calc, sp.id)
+            for T in (500.0, 1000.0, 1500.0)
+                lhs = hf + Glenn.h_sensible_to(calc, sp.id, T)
+                rhs = Glenn.calculate_properties(calc, sp.id, T).h_relative
+                @test isapprox(lhs, rhs; atol = 1.0e-2)
+            end
+
+            # A monoatomic ideal gas has gamma = Cp/Cv = 5/3 exactly.
+            ar = only(Glenn.get_available_species(calc, "Ar"; exact_match = true))
+            gamma_ar = Glenn.gamma(calc, ar.id, 300.0)
+            @test gamma_ar ≈ 5 / 3 rtol = 1.0e-10
+            # ...and Cv = Cp - R is the definition used.
+            cp = Glenn.calculate_properties(calc, ar.id, 300.0).cp
+            @test gamma_ar ≈ cp / (cp - calc.R_ref) rtol = 1.0e-14
+
+            # Differentiating H° numerically reproduces Cp.
+            T = 800.0
+            h = 1.0e-3
+            h_plus = Glenn.calculate_properties(calc, sp.id, T + h).h_relative
+            h_minus = Glenn.calculate_properties(calc, sp.id, T - h).h_relative
+            @test (h_plus - h_minus) / (2 * h) ≈
+                  Glenn.calculate_properties(calc, sp.id, T).cp rtol = 1.0e-5
+        finally
+            close(calc)
+        end
+    end
+
+    @testset "Edge cases - mixtures and missing data" begin
+        inp_m = "test_mixedge.inp"
+        db_m = "test_mixedge.db"
+        try
+            write(
+                inp_m,
+                make_thermo_inp([
+                    ("AA", "200.0", "1000.0", "28.0000"),
+                    ("BB", "200.0", "6000.0", "32.0000"),
+                    ("CC", "200.0", "1000.0", ""),      # no molecular weight
+                ]),
+            )
+            Glenn.build_database(inp_m, db_m)
+
+            # A species with no formation enthalpy.
+            db = SQLite.DB(db_m)
+            try
+                SQLite.execute(
+                    db,
+                    "UPDATE species SET heat_of_formation_298K = NULL WHERE name = 'AA'",
+                )
+            finally
+                SQLite.close(db)
+            end
+
+            calc = Glenn.Calculator(db_m)
+            try
+                aa = only(Glenn.get_available_species(calc, "AA"; exact_match = true))
+                bb = only(Glenn.get_available_species(calc, "BB"; exact_match = true))
+                cc = only(Glenn.get_available_species(calc, "CC"; exact_match = true))
+
+                # Missing formation enthalpy returns nothing, not an error.
+                @test aa.heat_of_formation_298K === nothing
+                @test Glenn.calculate_formation_enthalpy(calc, aa.id) === nothing
+
+                # A component without a usable molar mass is rejected.
+                @test cc.molecular_weight === nothing
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 0.5), (cc.id, 0.5))),
+                    500.0,
+                )
+
+                # A mixture whose components are all out of range fails even
+                # when strict = false.
+                @test_throws Glenn.TemperatureOutOfRangeError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 1.0),)),
+                    5000.0;
+                    strict = false,
+                )
+
+                # Empty mixture and inconsistent compositions are rejected.
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(()),
+                    500.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 0.6), (bb.id, 0.6))),
+                    500.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 1.5), (bb.id, -0.5))),
+                    500.0,
+                )
+            finally
+                close(calc)
+            end
+        finally
+            rm(inp_m; force = true)
+            rm(db_m; force = true)
         end
     end
 

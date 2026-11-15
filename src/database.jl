@@ -15,19 +15,34 @@ using SQLite
 """
     ThermoCalcError
 
-Base exception type for thermochemical calculation errors.
+Abstract base type for every error raised by Glenn.jl. Catching
+`ThermoCalcError` catches the whole hierarchy.
+
+For backwards compatibility, `ThermoCalcError("message")` still builds a
+generic `ThermoError`, so existing `throw(ThermoCalcError(...))` code keeps
+working.
 """
-struct ThermoCalcError <: Exception
+abstract type ThermoCalcError <: Exception end
+
+"""
+    ThermoError
+
+Generic `ThermoCalcError` used when no more specific error applies.
+"""
+struct ThermoError <: ThermoCalcError
     msg::String
 end
-Base.showerror(io::IO, e::ThermoCalcError) = print(io, "ThermoCalcError: ", e.msg)
+Base.showerror(io::IO, e::ThermoError) = print(io, "ThermoCalcError: ", e.msg)
+
+# Historical constructor: `ThermoCalcError` used to be a concrete struct.
+(::Type{ThermoCalcError})(msg::AbstractString) = ThermoError(String(msg))
 
 """
     DatabaseNotConnectedError
 
 Raised when attempting a calculation without an active database connection.
 """
-struct DatabaseNotConnectedError <: Exception
+struct DatabaseNotConnectedError <: ThermoCalcError
     msg::String
 end
 function DatabaseNotConnectedError()
@@ -42,7 +57,7 @@ end
 
 Raised when a species ID is not found in the database.
 """
-struct SpeciesNotFoundError <: Exception
+struct SpeciesNotFoundError <: ThermoCalcError
     msg::String
     species_id::Int
 end
@@ -52,22 +67,41 @@ end
 Base.showerror(io::IO, e::SpeciesNotFoundError) = print(io, "SpeciesNotFoundError: ", e.msg)
 
 """
+    CompositionError
+
+Raised when a mixture composition is invalid (empty mixture, duplicate
+species IDs, negative mole fractions, or fractions that do not sum to 1).
+"""
+struct CompositionError <: ThermoCalcError
+    msg::String
+end
+Base.showerror(io::IO, e::CompositionError) = print(io, "CompositionError: ", e.msg)
+
+"""
     TemperatureOutOfRangeError
 
 Raised when the requested temperature is outside all valid intervals
 for the given species.
+
+`temp_bounds` carries the overall `(T_min, T_max)` of the species when known,
+so callers can report a useful diagnostic.
 """
-struct TemperatureOutOfRangeError <: Exception
+struct TemperatureOutOfRangeError <: ThermoCalcError
     msg::String
     temperature::Float64
     species_name::String
+    temp_bounds::Union{Tuple{Float64, Float64}, Nothing}
 end
-function TemperatureOutOfRangeError(temperature::Float64, species_name::String)
-    return TemperatureOutOfRangeError(
-        "Temperature $temperature K is out of valid range for species '$species_name'",
-        temperature,
-        species_name,
-    )
+function TemperatureOutOfRangeError(
+    temperature::Float64,
+    species_name::AbstractString,
+    temp_bounds::Union{Tuple{Float64, Float64}, Nothing} = nothing,
+)
+    msg = "Temperature $temperature K is out of valid range for species '$species_name'"
+    if temp_bounds !== nothing
+        msg *= " (valid range: $(temp_bounds[1])–$(temp_bounds[2]) K)"
+    end
+    return TemperatureOutOfRangeError(msg, temperature, String(species_name), temp_bounds)
 end
 function Base.showerror(io::IO, e::TemperatureOutOfRangeError)
     print(io, "TemperatureOutOfRangeError: ", e.msg)
@@ -186,6 +220,184 @@ struct DatabaseStats
     total_coeff_sets::Int
     species_by_phase::Dict{String, Int}
     avg_molecular_weight::Union{Float64, Nothing}
+end
+
+"""
+    ValidationReport
+
+Result of `validate_database`.
+
+# Fields
+
+  - `valid::Bool`             : `true` when no error was found
+  - `errors::Vector{String}`  : integrity problems; any entry makes `valid` false
+  - `warnings::Vector{String}`: concerns that do not invalidate the database
+  - `counts::Dict{String, Int}`: row counts for species, intervals and coefficients
+"""
+struct ValidationReport
+    valid::Bool
+    errors::Vector{String}
+    warnings::Vector{String}
+    counts::Dict{String, Int}
+end
+
+function Base.show(io::IO, report::ValidationReport)
+    return print(
+        io,
+        "ValidationReport(valid=",
+        report.valid,
+        ", errors=",
+        length(report.errors),
+        ", warnings=",
+        length(report.warnings),
+        ")",
+    )
+end
+
+"""
+    SpeciesData
+
+Complete record of a species: identification metadata plus every temperature
+interval with its NASA-7 coefficients.
+
+Returned by `get_species_data`. Field access is the recommended form
+(`data.name`, `data.intervals`); dictionary-style access (`data["name"]`) is
+kept for backwards compatibility with versions that returned a `Dict`.
+"""
+struct SpeciesData
+    id::Int
+    name::String
+    formula::Union{String, Nothing}
+    comments::Union{String, Nothing}
+    reference_code::Union{String, Nothing}
+    phase::String
+    molecular_weight::Union{Float64, Nothing}
+    heat_of_formation_298K::Union{Float64, Nothing}
+    num_intervals::Int
+    intervals::Vector{IntervalData}
+end
+
+"""
+    to_dict(data::SpeciesData) -> Dict{String, Any}
+
+Return a `SpeciesData` as a plain `Dict`, matching the pre-0.5.0 return shape.
+"""
+function to_dict(data::SpeciesData)
+    return Dict{String, Any}(
+        "id" => data.id,
+        "name" => data.name,
+        "formula" => data.formula,
+        "comments" => data.comments,
+        "reference_code" => data.reference_code,
+        "phase" => data.phase,
+        "molecular_weight" => data.molecular_weight,
+        "heat_of_formation_298K" => data.heat_of_formation_298K,
+        "num_intervals" => data.num_intervals,
+        "intervals" => data.intervals,
+    )
+end
+
+# Backwards compatibility: `get_species_data` used to return a Dict.
+function Base.getindex(data::SpeciesData, key::AbstractString)
+    key == "id" && return data.id
+    key == "name" && return data.name
+    key == "formula" && return data.formula
+    key == "comments" && return data.comments
+    key == "reference_code" && return data.reference_code
+    key == "phase" && return data.phase
+    key == "molecular_weight" && return data.molecular_weight
+    key == "heat_of_formation_298K" && return data.heat_of_formation_298K
+    key == "num_intervals" && return data.num_intervals
+    key == "intervals" && return data.intervals
+    throw(KeyError(key))
+end
+
+Base.keys(::SpeciesData) = (
+    "id",
+    "name",
+    "formula",
+    "comments",
+    "reference_code",
+    "phase",
+    "molecular_weight",
+    "heat_of_formation_298K",
+    "num_intervals",
+    "intervals",
+)
+
+"""
+    Mixture
+
+A fixed-composition mixture defined by mole fractions.
+
+`species` holds `(species_id, mole_fraction)` tuples. Call `validate` to check
+that the composition is self-consistent before using it.
+"""
+struct Mixture
+    species::Vector{Tuple{Int, Float64}}
+
+    # Explicit inner constructor: prevents Julia from generating the generic
+    # `Mixture(::Any)` constructor, which the outer constructor below would
+    # otherwise overwrite.
+    Mixture(species::Vector{Tuple{Int, Float64}}) = new(species)
+end
+
+"""
+    Mixture(comps)
+
+Build a `Mixture` from any iterable of `(species_id, mole_fraction)` pairs,
+such as a tuple of tuples, a vector, or a generator.
+"""
+function Mixture(comps::Union{Tuple, AbstractVector})
+    return Mixture(Tuple{Int, Float64}[(Int(id), Float64(x)) for (id, x) in comps])
+end
+
+"""
+    validate(mixture::Mixture; tol=1e-9)
+
+Check that the mixture is non-empty, has no duplicate species IDs, has
+non-negative fractions, and that the mole fractions sum to 1 within `tol`.
+
+Throws `CompositionError` on the first failed check.
+"""
+function validate(mixture::Mixture; tol::Float64 = 1e-9)
+    isempty(mixture.species) && throw(CompositionError("mixture has no species"))
+
+    seen = Set{Int}()
+    total = 0.0
+    for (species_id, fraction) in mixture.species
+        species_id in seen &&
+            throw(CompositionError("duplicate species ID $species_id in mixture"))
+        push!(seen, species_id)
+        fraction < 0.0 && throw(
+            CompositionError("negative mole fraction $fraction for species ID $species_id"),
+        )
+        total += fraction
+    end
+
+    if abs(total - 1.0) > tol
+        throw(CompositionError("mole fractions must sum to 1.0 (got $total)"))
+    end
+    return nothing
+end
+
+"""
+    MixedProperties
+
+Thermochemical properties of a mixture at a single temperature, on both a molar
+(per mole of mixture) and a mass (per kilogram of mixture) basis.
+
+`molar_mass` is the mole-fraction-weighted mean molar mass in kg/mol.
+"""
+struct MixedProperties
+    temperature::Float64
+    cp_molar::Float64
+    h_molar::Float64
+    s_molar::Float64
+    molar_mass::Float64
+    cp_mass::Float64
+    h_mass::Float64
+    s_mass::Float64
 end
 
 # ------------------------------------------------------------------
@@ -429,6 +641,11 @@ returns up to 20 matches, with exact matches prioritised first.
 If `exact_match=true`, performs a case-insensitive exact match — only the
 species whose name matches the pattern exactly is returned (e.g. ``"N2"``
 returns only N₂, not Be₃N₂).
+
+Because the comparison folds case, a pattern may still match more than one
+species when names differ only by capitalisation (``"CO"`` matches both carbon
+monoxide `CO` and cobalt `Co`). Use `only(...)` only when the name is
+unambiguous, or compare the returned `name` field explicitly.
 """
 function find_species(tdb::ThermoDB, name::AbstractString; exact_match::Bool = false)
     if exact_match
@@ -512,10 +729,13 @@ function list_all_species(tdb::ThermoDB)
 end
 
 """
-    get_species_data(tdb::ThermoDB, species_id::Int) -> Union{Dict, Nothing}
+    get_species_data(tdb::ThermoDB, species_id::Int) -> Union{SpeciesData, Nothing}
 
 Get complete data for a species including all its temperature intervals
 and polynomial coefficients.
+
+Returns a typed [`SpeciesData`](@ref), or `nothing` when the ID is unknown.
+Dictionary-style access (`data["name"]`) remains supported for compatibility.
 """
 function get_species_data(tdb::ThermoDB, species_id::Int)
     # Species basic info
@@ -530,12 +750,12 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
     )
 
     # Get first row (avoid collect which returns missing)
-    data = nothing
+    row_data = nothing
     for row in result
-        data = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
+        row_data = Dict{String, Any}(String(k) => v for (k, v) in pairs(row))
         break
     end
-    if data === nothing
+    if row_data === nothing
         return nothing
     end
 
@@ -556,9 +776,22 @@ function get_species_data(tdb::ThermoDB, species_id::Int)
     )
 
     intervals = [_row_to_intervaldata(r) for r in int_result]
-    data["intervals"] = intervals
 
-    return data
+    _str_or_nothing(x) = x === nothing || ismissing(x) ? nothing : String(x)
+    _float_or_nothing(x) = x === nothing || ismissing(x) ? nothing : Float64(x)
+
+    return SpeciesData(
+        Int(row_data["id"]),
+        String(row_data["name"]),
+        _str_or_nothing(get(row_data, "formula", nothing)),
+        _str_or_nothing(get(row_data, "comments", nothing)),
+        _str_or_nothing(get(row_data, "reference_code", nothing)),
+        String(row_data["phase"]),
+        _float_or_nothing(get(row_data, "molecular_weight", nothing)),
+        _float_or_nothing(get(row_data, "heat_of_formation_298K", nothing)),
+        Int(get(row_data, "num_intervals", 0)),
+        intervals,
+    )
 end
 
 """
@@ -594,6 +827,9 @@ end
 
 Find the temperature interval and coefficients valid for the given temperature.
 Returns an `IntervalData` struct, or `nothing` if out of range.
+
+When two intervals share a boundary temperature, the lower one (smallest
+`interval_number`) is returned. This is deterministic thanks to the `ORDER BY`.
 """
 function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature::Float64)
     result = SQLite.DBInterface.execute(
@@ -608,6 +844,7 @@ function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature
     WHERE ti.species_id = ?
       AND ti.temp_min <= ?
       AND ti.temp_max >= ?
+    ORDER BY ti.interval_number
     LIMIT 1
 """,
         (species_id, temperature, temperature),
@@ -620,10 +857,203 @@ function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature
     return nothing
 end
 
+"""
+    get_temperature_bounds(tdb::ThermoDB, species_id::Int)
+       -> Union{Tuple{Float64, Float64}, Nothing}
+
+Return the overall `(T_min, T_max)` covered by a species' temperature intervals,
+or `nothing` when the species has no intervals (or does not exist).
+
+Useful to report a precise diagnostic when a temperature is out of range.
+"""
+function get_temperature_bounds(tdb::ThermoDB, species_id::Int)
+    for row in SQLite.DBInterface.execute(
+        tdb.db,
+        """
+        SELECT MIN(temp_min), MAX(temp_max)
+        FROM temperature_intervals WHERE species_id = ?
+        """,
+        (species_id,),
+    )
+        tmin, tmax = row[1], row[2]
+        (tmin === nothing || tmax === nothing) && return nothing
+        (ismissing(tmin) || ismissing(tmax)) && return nothing
+        return (Float64(tmin), Float64(tmax))
+    end
+    return nothing
+end
+
+# ------------------------------------------------------------------
+# Integrity validation
+# ------------------------------------------------------------------
+
+"""
+    _count(db::SQLite.DB, sql::AbstractString) -> Int
+
+Run a `COUNT(*)` query and return the value as an `Int` (0 when no row).
+"""
+function _count(db::SQLite.DB, sql::AbstractString)
+    for row in SQLite.DBInterface.execute(db, sql)
+        return Int(row[1])
+    end
+    return 0
+end
+
+"""
+    validate_database(tdb::ThermoDB) -> ValidationReport
+
+Run read-only integrity and semantic checks against a database and return a
+`ValidationReport`. Nothing is modified.
+
+Checks performed:
+
+  - the `species`, `temperature_intervals` and `coefficients` tables exist;
+  - no coefficient row references a missing interval;
+  - no interval row references a missing species;
+  - every interval has exactly one coefficient row;
+  - `species.num_intervals` agrees with the stored intervals;
+  - interval bounds are present, ordered (`temp_min < temp_max`) and not degenerate;
+  - no coefficient set contains `NULL` values;
+  - no species name looks like a FORTRAN coefficient token (parser guard).
+
+Warnings (reported, but not fatal):
+
+  - missing `metadata` table or missing `gas_constant_ref` entry, which means the
+    dataset reference gas constant is unknown and `R_UNIVERSAL` is used instead;
+  - `file_metadata.total_species` not set.
+"""
+function validate_database(tdb::ThermoDB)
+    errors = String[]
+    warnings = String[]
+    counts = Dict{String, Int}()
+
+    missing_tables = [
+        table for
+        table in ("species", "temperature_intervals", "coefficients") if
+        !_table_exists(tdb.db, table)
+    ]
+    if !isempty(missing_tables)
+        push!(errors, "missing required table(s): " * join(missing_tables, ", "))
+        return ValidationReport(false, errors, warnings, counts)
+    end
+
+    counts["total_species"] = _count(tdb.db, "SELECT COUNT(*) FROM species")
+    counts["total_intervals"] = _count(
+        tdb.db,
+        "SELECT COUNT(*) FROM temperature_intervals",
+    )
+    counts["total_coeff_sets"] = _count(tdb.db, "SELECT COUNT(*) FROM coefficients")
+
+    # --- Referential integrity ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM coefficients c
+        LEFT JOIN temperature_intervals ti ON c.interval_id = ti.id
+        WHERE ti.id IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n coefficient row(s) reference a missing interval")
+
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM temperature_intervals ti
+        LEFT JOIN species s ON ti.species_id = s.id
+        WHERE s.id IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n interval row(s) reference a missing species")
+
+    # --- Exactly one coefficient set per interval ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM (
+            SELECT interval_id, COUNT(*) AS n FROM coefficients
+            GROUP BY interval_id
+        ) WHERE n != 1
+        """,
+    )
+    n > 0 && push!(errors, "$n interval(s) do not have exactly one coefficient row")
+
+    # --- num_intervals agreement ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM species s WHERE s.num_intervals != (
+            SELECT COUNT(*) FROM temperature_intervals ti
+            WHERE ti.species_id = s.id
+        )
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n species have num_intervals disagreeing with stored intervals")
+
+    # --- Bounds ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM temperature_intervals
+        WHERE temp_min IS NULL OR temp_max IS NULL OR temp_min >= temp_max
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n interval(s) have null, unordered or degenerate bounds")
+
+    # --- Coefficient completeness ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM coefficients
+        WHERE a1 IS NULL OR a2 IS NULL OR a3 IS NULL OR a4 IS NULL
+           OR a5 IS NULL OR a6 IS NULL OR a7 IS NULL OR b1 IS NULL OR b2 IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n coefficient set(s) contain NULL values")
+
+    # --- Semantic guard: a coefficient line must never become a species ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM species
+        WHERE name LIKE '%.%D%' OR name LIKE '%.%E%'
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n species name(s) look like FORTRAN coefficient tokens")
+
+    # --- Warnings ---
+    if _table_exists(tdb.db, "metadata")
+        n = _count(
+            tdb.db,
+            "SELECT COUNT(*) FROM metadata WHERE key = 'gas_constant_ref'",
+        )
+        n == 0 && push!(
+            warnings,
+            "metadata table has no 'gas_constant_ref' entry; R_UNIVERSAL is used instead",
+        )
+    else
+        push!(
+            warnings,
+            "database has no 'metadata' table; the reference gas constant is unknown",
+        )
+    end
+
+    if _table_exists(tdb.db, "file_metadata")
+        n = _count(
+            tdb.db,
+            "SELECT COUNT(*) FROM file_metadata WHERE id = 1 AND total_species IS NOT NULL",
+        )
+        n == 0 && push!(warnings, "file_metadata.total_species is not set")
+    end
+
+    return ValidationReport(isempty(errors), errors, warnings, counts)
+end
+
 # ------------------------------------------------------------------
 # NASA-7 polynomial calculations (dimensionless: Cp/R, H/RT, S/R)
 # ------------------------------------------------------------------
-
 """
     calculate_cp(coeffs::NASACoefficients, T::Float64) -> Float64
 
@@ -689,9 +1119,15 @@ Base.@deprecate calculate_s(coeffs::Dict, T::Float64) calculate_s(NASACoefficien
 
 # Export public symbols (used by parent module Glenn)
 export ThermoCalcError,
-    DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
-export NASACoefficients, SpeciesInfo, IntervalData, DatabaseStats
+    ThermoError,
+    DatabaseNotConnectedError,
+    SpeciesNotFoundError,
+    TemperatureOutOfRangeError,
+    CompositionError
+export NASACoefficients, SpeciesInfo, SpeciesData, IntervalData, DatabaseStats
+export ValidationReport
+export Mixture, MixedProperties, to_dict, validate, validate_database
 export ThermoDB, R_UNIVERSAL, R_GLENN
-export get_gas_constant_ref
+export get_gas_constant_ref, get_temperature_bounds
 
 end # module ThermoDatabase

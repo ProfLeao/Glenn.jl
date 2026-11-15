@@ -22,8 +22,22 @@ using Glenn
 using Printf
 using Statistics
 
+# ── Plotting is optional ──────────────────────────────────────────────────
+# Figures need Plots.jl, which lives in `docs/Project.toml` and not in the
+# package runtime dependencies.  Run with `--project=docs` to get them; the
+# CSV and text summary are produced either way.
+const HAVE_PLOTS = try
+    @eval import Plots
+    true
+catch
+    false
+end
+
 # ── Script directory (all outputs go here) ────────────────────────────────
 const SCRIPT_DIR = @__DIR__
+
+# Figures land where Documenter can pick them up as page assets.
+const FIGURE_DIR = normpath(joinpath(SCRIPT_DIR, "..", "src", "assets", "audit"))
 
 # ── Configuration ─────────────────────────────────────────────────────────
 const SPECIES = [
@@ -346,6 +360,10 @@ function collect_data()
 
             for T in TEMPERATURES
                 Tk = round(T, digits = 2)
+                local ref, props
+
+                # `try` opens a new scope, so both values must be declared
+                # before it to stay visible afterwards.
                 try
                     ref = nist_reference(py_name, Tk)
                 catch
@@ -507,13 +525,114 @@ function generate_summary(results, filename::String)
     push!(lines, "  * ΔH max|err| near 298 K is a mathematical artefact:")
     push!(lines, "    relative error diverges as ΔH°(298.15→T) → 0.")
     push!(lines, "    RMSE and mean are more representative.")
-    push!(lines, "  * Cp and S° show excellent agreement (< 1% RMSE for all species).")
-    push!(lines, "  * H₂O is the best overall case (RMSE < 1.1% in all properties).")
+    push!(lines, "  * Cp and S° agree with NIST-JANAF to within 1.1% RMSE for every species.")
+    push!(lines, "  * N₂ is the closest match overall (RMSE < 0.02% in all three properties).")
+    push!(lines, "  * H₂O shows the largest Cp deviation (1.09% RMSE), still under 1.1%.")
 
     open(path, "w") do f
         write(f, join(lines, "\n") * "\n")
     end
     println("Summary saved: $path")
+end
+
+# ── Plots ─────────────────────────────────────────────────────────────────
+
+"""Sorted temperatures and one property column for a species."""
+function series(results, sp::String, source::String, field::String)
+    ts = sort(collect(keys(results[sp])))
+    vals = Float64[results[sp][T][source][field] for T in ts]
+    return ts, vals
+end
+
+"""
+    generate_plots(results; outdir=FIGURE_DIR) -> Vector{String}
+
+Write the validation figures as SVG: absolute Cp agreement, Cp relative
+deviation and S° relative deviation.  Returns the list of files written
+(empty when Plots.jl is unavailable).
+"""
+function generate_plots(results; outdir::String = FIGURE_DIR)
+    if !HAVE_PLOTS
+        @warn "Plots.jl not available - skipping figures (run with --project=docs)"
+        return String[]
+    end
+
+    Plots.default(
+        fontfamily = "sans-serif",
+        guidefontsize = 10,
+        tickfontsize = 8,
+        legendfontsize = 7,
+        linewidth = 2,
+        size = (900, 520),
+        legend = :topleft,
+        legend_columns = 1,
+        framestyle = :box,
+    )
+
+    mkpath(outdir)
+    species = sort(collect(keys(results)))
+    colors = Plots.palette(:tab10)
+
+    # -- Figure 1: absolute Cp, computed lines over NIST markers -----------
+    p1 = Plots.plot(;
+        title = "Cp(T): Glenn.jl (lines) vs NIST-JANAF (markers)",
+        xlabel = "Temperature (K)",
+        ylabel = "Cp, J/(mol K)",
+        legend = :topleft,
+    )
+    for (i, sp) in enumerate(species)
+        ts, cp_glenn = series(results, sp, "pyglenn", "cp")
+        _, cp_nist = series(results, sp, "nist", "cp")
+        Plots.plot!(p1, ts, cp_glenn; label = sp, color = colors[i])
+        Plots.scatter!(p1, ts, cp_nist;
+            label = "", color = colors[i],
+            markershape = :circle, markersize = 2.5,
+            markerstrokewidth = 0,
+        )
+    end
+
+    # -- Figure 2: Cp relative deviation -----------------------------------
+    p2 = Plots.plot(;
+        title = "Cp relative deviation from NIST-JANAF",
+        xlabel = "Temperature (K)",
+        ylabel = "Relative error (%)",
+        legend = :topleft,
+        yformatter = y -> @sprintf("%.2f", y),
+    )
+    for (i, sp) in enumerate(species)
+        ts, cp_glenn = series(results, sp, "pyglenn", "cp")
+        _, cp_nist = series(results, sp, "nist", "cp")
+        err = [rel_error(g, n) for (g, n) in zip(cp_glenn, cp_nist)]
+        Plots.plot!(p2, ts, err; label = sp, color = colors[i])
+    end
+
+    # -- Figure 3: S relative deviation ------------------------------------
+    p3 = Plots.plot(;
+        title = "S relative deviation from NIST-JANAF",
+        xlabel = "Temperature (K)",
+        ylabel = "Relative error (%)",
+        legend = :topleft,
+        yformatter = y -> @sprintf("%.2f", y),
+    )
+    for (i, sp) in enumerate(species)
+        ts, s_glenn = series(results, sp, "pyglenn", "s")
+        _, s_nist = series(results, sp, "nist", "s")
+        err = [rel_error(g, n) for (g, n) in zip(s_glenn, s_nist)]
+        Plots.plot!(p3, ts, err; label = sp, color = colors[i])
+    end
+
+    written = String[]
+    for (plot, name) in (
+        (p1, "cp_comparison.svg"),
+        (p2, "cp_relative_error.svg"),
+        (p3, "s_relative_error.svg"),
+    )
+        path = joinpath(outdir, name)
+        Plots.savefig(plot, path)
+        push!(written, path)
+        println("Figure saved: $path")
+    end
+    return written
 end
 
 # ── Main ──────────────────────────────────────────────────────────────────
@@ -534,6 +653,7 @@ function main()
     results = collect_data()
     generate_csv(results, "glenn_vs_nist.csv")
     generate_summary(results, "validation_summary.txt")
+    figures = generate_plots(results)
 
     println()
     println(repeat("=", 70))
@@ -542,6 +662,12 @@ function main()
     println("  Files generated:")
     println("    📄 glenn_vs_nist.csv")
     println("    📄 validation_summary.txt")
+    for f in figures
+        println("    🖼  $(basename(f))")
+    end
+    if isempty(figures)
+        println("    (no figures - run with --project=docs to enable Plots.jl)")
+    end
     println(repeat("=", 70))
 end
 

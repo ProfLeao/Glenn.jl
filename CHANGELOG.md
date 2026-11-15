@@ -4,6 +4,176 @@ All notable changes to Glenn.jl are documented in this file.
 
 ---
 
+## [0.5.0] — 2026-11-15
+
+### 🐛 Fixed
+
+- **Dataset reconciliation.** The bundled `thermo.db` was rebuilt with a
+  state-machine parser. The previous parser desynchronised on malformed blocks,
+  which stored three FORTRAN coefficient lines as "species"
+  (`-1.302004763D+06`, `-7.310769440D+05`, `4.461077310D+04`) and silently
+  dropped eight genuine species. The dataset now holds **2035 species /
+  3795 intervals** (previously 2030 / 3772), and every previously present
+  species keeps identical coefficients.
+- **Repeated species records are merged.** `thermo.inp` encodes phase
+  transitions by repeating a species name (`Cr(cr)`, `Cr2O3(I)`, `Fe(a)`,
+  `Ni(cr)`, …). Previously only the first record was kept — and intervals from
+  the later ones were stored under colliding numbers, so `Cr(cr)` reported a
+  bogus `[200, 311.5] K` + `[1000, 2130] K` pair and 500 K raised
+  `TemperatureOutOfRangeError`. The extra records are now appended as additional
+  intervals (16 recovered across 10 substances), giving each substance its
+  complete contiguous range.
+- **`parse_and_load` no longer creates partial species.** Every declared
+  interval is validated before the species row is inserted, and malformed blocks
+  are skipped by resynchronising at the next verified species header.
+- **Builder examples in the README and manual** called `connect` /
+  `create_tables` / `parse_and_load` without qualification; those functions are
+  not exported. The examples now use `build_database`, and the low-level steps
+  are shown as `Glenn.connect` etc.
+- **Interval selection at a shared boundary is deterministic.** When two
+  intervals of the same species share a temperature (e.g. `[200, 1000]` and
+  `[1000, 6000]`), `get_species_for_temperature` issued `LIMIT 1` without an
+  `ORDER BY`, so the returned interval depended on SQLite's scan order. It now
+  orders by `interval_number` and always returns the lower interval, so
+  `calculate_properties(calc, id, 1000.0)` reports `temp_max == 1000.0`
+  consistently across platforms and across database rebuilds.
+- **`docs/audit/audit.jl` no longer aborts on the first species.**
+  `props` and `ref` were assigned inside a `try` block and read outside it, but
+  `try` introduces its own scope, so the second iteration raised
+  `UndefVarError`. Both are now declared before the block. The summary text also
+  claimed Cp agreement "below 1% RMSE for all species"; the measured H₂O value is
+  1.09%, so the note now states the real figure.
+
+### ✨ Added
+
+- **CLI `validate` and `migrate-metadata`** — `validate` runs the same
+  read-only checks as `validate_database` and exits with status `1` when the
+  database is inconsistent; `migrate-metadata` adds the dataset reference gas
+  constant to a legacy database without touching thermochemical rows. Also adds
+  `--version`.
+- **CLI exit status** — `cli_main` and every `cmd_*` now return `0`/`1`, and
+  `bin/glenn.jl` propagates it with `exit(...)`, so the CLI can gate a CI step.
+  Unknown commands and options are reported on stderr and fail instead of
+  silently printing the help text and succeeding.
+- **`fit_nasa7(temperatures, cp_values; t_ref, h_ref, s_ref, weights, r_ref)`****
+  — weighted least-squares fit of the seven NASA-7 heat-capacity coefficients to
+  tabulated `Cp(T)` data. The enthalpy constant `b1` is derived so that
+  `H°(t_ref) == h_ref` holds exactly (`b1`, not `a6`, is the integration
+  constant); `b2` comes from `s_ref` when given. Round-trips exact polynomial
+  data to ~1e-12 relative error.
+- **`fit_nasa7_multi(temperatures, cp_values, breakpoints; ...)`** — one
+  coefficient set per interval, with `Cp/R` and its first derivative constrained
+  to be continuous at every breakpoint, and `H°`/`S°` propagated so they are
+  continuous too. Returns one `NASACoefficients` per interval.
+- **`validate_database(tdb)`** — read-only integrity and semantic checks
+  returning a `ValidationReport` (`valid`, `errors`, `warnings`, `counts`):
+  required tables, referential integrity, exactly one coefficient set per
+  interval, `num_intervals` agreement, ordered bounds, complete coefficient
+  sets, and the parser guard that rejects species names looking like FORTRAN
+  tokens. Missing dataset metadata is reported as a warning. The rebuild script
+  now uses it, so users and the release gate run identical checks.
+- **`calculate_properties_range(calc, id, temps; strict=false)`** — canonical
+  bulk-properties function, mirroring the reference implementation. Loads the
+  species intervals once, preserves input order, and skips out-of-range
+  temperatures unless `strict=true`, in which case the first one raises
+  `TemperatureOutOfRangeError`. `calculate_properties(calc, id, temps)` now
+  delegates to it.
+- **`h_sensible_to(calc, id, T, t_ref=298.15)`** — sensible enthalpy
+  `H(T) − H(t_ref)` in J/mol.
+- **`dcp_dt(calc, id, T)`** — analytical temperature derivative of Cp in
+  J/(mol·K²), obtained by differentiating the NASA-7 polynomial term by term.
+- **`Glenn.gamma(calc, id, T)`** — Cp/Cv ratio for an ideal gas. Not exported,
+  because `gamma` collides with `SpecialFunctions.gamma`.
+- **`mixture_properties(calc, mixture, T; strict=true)`** — properties of a
+  fixed-composition mixture on both a molar and a mass basis, returning the new
+  `MixedProperties` type. With `strict=false`, components outside their valid
+  range are skipped, the remaining mole fractions are renormalised, and a
+  warning is logged.
+- **`get_temperature_bounds(tdb, id)`** — overall `(T_min, T_max)` covered by a
+  species. `TemperatureOutOfRangeError` now reports the valid range in its
+  message and carries it in `temp_bounds`. It also accepts a `Calculator`
+  directly, like the rest of the high-level API.
+- **`build_database(inp, db; merge_duplicates=true)`** — one-call database build
+  that always closes the connection, even when parsing fails.
+- **`parse_and_load(builder; merge_duplicates)`** — set to `false` to keep only
+  the first record of a repeated species, matching the reference
+  implementation's dataset exactly.
+- **`scripts/rebuild_database.jl`** — reproducible, atomic dataset rebuild:
+  builds next to the target, runs integrity checks and release gates
+  (expected species/intervals/coefficient sets), and only then replaces the
+  bundled database.
+- **`docs/PARSER_FIX_PORTING.md`** — porting guide for the parser and dataset
+  fixes, including the checklist and regression tests for the reference
+  implementation.
+- **`SpeciesData`** — typed record returned by `get_species_data` (identification
+  metadata plus every temperature interval). Dictionary-style access
+  (`data["name"]`) still works, and `to_dict` restores the previous `Dict` shape.
+- **`Mixture`**, **`MixedProperties`** and `validate` — fixed-composition
+  mixtures and their molar/mass-basis properties.
+- **`CompositionError`** — raised for invalid mixture compositions (empty,
+  duplicate species IDs, negative fractions, fractions not summing to 1).
+- **`ThermoError`** — generic concrete `ThermoCalcError`.
+- **`Glenn.R`** — compatibility alias of `R_UNIVERSAL`, mirroring the `pyglenn`
+  API. Not exported, to avoid clashing with the common local variable name `R`.
+- **Cheat sheet** — `docs/src/cheat_sheet.md` collects the whole public API on a
+  single page and is published as part of the manual; `docs/cheat_sheet/cheat_sheet.pdf`
+  is the printable two-page version, generated from that same source.
+- **`COMPATIBILITY_CONTRACT.md`** — states what the package guarantees to keep
+  stable (exports, field names, units, exception hierarchy, temperature and
+  interval semantics, numerical tolerances, dataset contents, database schema,
+  CLI exit codes), what it explicitly does not (species IDs, message wording,
+  performance, underscore-prefixed names), the deprecation policy and the
+  supported Julia versions. Each clause is tied to the test that enforces it.
+- **`CITATION.cff`** and a README *Citation* section, with a BibTeX entry and the
+  reference to cite for the NASA Glenn coefficients themselves. No DOI is baked
+  in: the badge is minted by Zenodo when a release is tagged, and the README
+  carries the template ready to enable.
+- **`NOTICE`** — attribution for the project lineage, the public-domain NASA
+  Glenn thermodynamic data, the NIST-JANAF reference used for validation, and
+  every third-party dependency.
+- **Validation figures** — `docs/audit/audit.jl` now also writes three SVG plots
+  (Cp agreement, Cp relative deviation, S° relative deviation) for the
+  documentation, and the new *Validation against NIST-JANAF* manual page reports
+  the per-species RMSE table. Plotting is optional: without `--project=docs` the
+  CSV and text summary are still produced and only the figures are skipped.
+
+### 🔧 Changed
+
+- **Exception hierarchy:** `DatabaseNotConnectedError`, `SpeciesNotFoundError`,
+  `TemperatureOutOfRangeError`, `CompositionError` and `ThermoError` are now
+  subtypes of the abstract `ThermoCalcError`, so a single
+  `catch e::ThermoCalcError` covers the whole package. The historical
+  `ThermoCalcError("msg")` constructor still works and returns a `ThermoError`.
+- **`TemperatureOutOfRangeError`** now carries `temp_bounds` and includes the
+  valid range in its message when known.
+- **`calculate_properties`** and `calculate_formation_enthalpy` now raise
+  `SpeciesNotFoundError` / `TemperatureOutOfRangeError` instead of a generic
+  error, matching their documented contract.
+
+### 🗑️ Deprecated
+
+- `get_properties_range` is deprecated in favour of
+  `calculate_properties_range`. It still works and returns the same results, but
+  emits a deprecation warning; it stays exported only for backwards
+  compatibility.
+
+### ⚠️ Breaking Changes
+
+- `get_species_data` returns `SpeciesData` instead of `Dict`. `data["name"]`
+  keeps working; code relying on other `Dict` operations (`haskey`, `get`,
+  iteration) should use fields or `to_dict(data)`.
+- `ThermoCalcError` is now an abstract type (still `<: Exception`). The
+  historical `ThermoCalcError("msg")` constructor still works and returns a
+  `ThermoError`.
+- **Species `id` values are not stable across dataset rebuilds.** Because three
+  bogus entries were removed and eight species added, 14 species changed ID
+  (e.g. `C6H14(L),n-hexa` 2016 → 2018). Look species up by name instead of
+  persisting numeric IDs.
+- The migration guide (`docs/src/migration.md`) documents every change with
+  before/after examples and a post-upgrade check script.
+
+---
+
 ## [0.4.1] — 2026-08-22
 
 ### ✨ Added

@@ -49,11 +49,19 @@ All results are returned in SI units:
 
 | Table | Description | Records |
 |---|---|---|
-| `species` | Chemical species | 2030 |
-| `temperature_intervals` | Valid T ranges per species | 3772 |
-| `coefficients` | NASA-7 polynomial coefficients (a1–a7, b1, b2) | 3772 sets |
+| `species` | Chemical species | 2035 |
+| `temperature_intervals` | Valid T ranges per species | 3795 |
+| `coefficients` | NASA-7 polynomial coefficients (a1–a7, b1, b2) | 3795 sets |
 | `file_metadata` | Global file metadata | 1 |
 | `metadata` | Dataset metadata (reference gas constant) | 2 |
+
+## Further reading
+
+- [Cheat Sheet](cheat_sheet.md) — one page with every call you need
+- [Validation against NIST-JANAF](validation.md) — plots and error tables
+- [Migrating to 0.5.0](migration.md) — every breaking change, with before/after code
+- `COMPATIBILITY_CONTRACT.md` in the repository root — what is stable, what is
+  not, and the deprecation policy
 
 ## Index
 

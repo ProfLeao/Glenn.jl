@@ -57,8 +57,10 @@ function parse_cli_args(args::Vector{String})
     while i <= length(args)
         arg = args[i]
 
-        if arg in ("build", "query")
+        if arg in ("build", "query", "validate", "migrate-metadata")
             result["command"] = arg
+        elseif arg in ("--version",)
+            result["command"] = "version"
         elseif arg in ("-v", "--verbose")
             result["verbose"] = true
         elseif arg in ("-i", "--input")
@@ -83,6 +85,10 @@ function parse_cli_args(args::Vector{String})
             end
         elseif arg in ("-h", "--help")
             result["command"] = "help"
+        elseif startswith(arg, "-")
+            result["error"] = "Unknown option: $arg"
+        else
+            result["error"] = "Unknown command: $arg"
         end
 
         i += 1
@@ -110,7 +116,7 @@ function cmd_build(args::Dict)
 
     if !isfile(inp_file)
         println(stderr, "Error: Input file not found: $inp_file")
-        return
+        return 1
     end
 
     builder = ThermoBuilder.ThermoDBBuilder(inp_file, out_file)
@@ -142,6 +148,7 @@ function cmd_build(args::Dict)
     finally
         ThermoBuilder.close(builder)
     end
+    return 0
 end
 
 # ------------------------------------------------------------------
@@ -163,7 +170,7 @@ function cmd_query(args::Dict)
 
     if !isfile(db_file)
         println(stderr, "Error: Database file not found: $db_file")
-        return
+        return 1
     end
 
     calc = ThermoCalculator.Calculator(db_file)
@@ -236,6 +243,97 @@ function cmd_query(args::Dict)
     finally
         Base.close(calc)
     end
+    return 0
+end
+
+# ------------------------------------------------------------------
+# Validate command
+# ------------------------------------------------------------------
+
+"""
+    cmd_validate(args::Dict) -> Int
+
+Run read-only integrity checks against a database.
+
+Returns `0` when the database is consistent and `1` otherwise.
+"""
+function cmd_validate(args::Dict)
+    println(repeat("=", 70))
+    println("DATABASE VALIDATION")
+    println(repeat("=", 70))
+
+    db_file = args["database"]::String
+    println("  Database: $db_file")
+
+    if !isfile(db_file)
+        println(stderr, "Error: Database file not found: $db_file")
+        return 1
+    end
+
+    tdb = ThermoDatabase.ThermoDB(db_file)
+    report = try
+        ThermoDatabase.validate_database(tdb)
+    finally
+        Base.close(tdb)
+    end
+
+    println()
+    println("  Species:      $(get(report.counts, "total_species", 0))")
+    println("  Intervals:    $(get(report.counts, "total_intervals", 0))")
+    println("  Coefficients: $(get(report.counts, "total_coeff_sets", 0))")
+
+    for w in report.warnings
+        println("  [warn]  $w")
+    end
+    for e in report.errors
+        println("  [error] $e")
+    end
+
+    if report.valid
+        println("\n[SUCCESS] Database is consistent.")
+        return 0
+    end
+
+    println("\n[FAIL] Database is not consistent.")
+    return 1
+end
+
+# ------------------------------------------------------------------
+# Migrate metadata command
+# ------------------------------------------------------------------
+
+"""
+    cmd_migrate_metadata(args::Dict) -> Int
+
+Add the `metadata` table and the dataset reference gas constant to a legacy
+database, without touching the thermochemical rows.
+
+Returns `0` on success and `1` when the database is missing.
+"""
+function cmd_migrate_metadata(args::Dict)
+    println(repeat("=", 70))
+    println("METADATA MIGRATION")
+    println(repeat("=", 70))
+
+    db_file = args["database"]::String
+    println("  Database: $db_file")
+
+    if !isfile(db_file)
+        println(stderr, "Error: Database file not found: $db_file")
+        return 1
+    end
+
+    tdb = ThermoDatabase.ThermoDB(db_file)
+    try
+        ThermoBuilder.migrate_metadata!(tdb)
+        r_ref = ThermoDatabase.get_gas_constant_ref(tdb)
+        println("  gas_constant_ref: $r_ref")
+    finally
+        Base.close(tdb)
+    end
+
+    println("\n[SUCCESS] Metadata is present and canonical.")
+    return 0
 end
 
 # ------------------------------------------------------------------
@@ -256,18 +354,26 @@ USAGE:
     julia --project -e 'using Glenn; Glenn.cli_main()' -- <command> [options]
 
 COMMANDS:
-    build       Convert thermo.inp → SQLite3 database
-    query       Run example queries against the database
+    build              Convert thermo.inp → SQLite3 database
+    query              Run example queries against the database
+    validate           Run read-only integrity checks
+    migrate-metadata   Add dataset metadata to a legacy database
 
 BUILD OPTIONS:
     -i, --input <file>    Input FORTRAN file (default: bundled thermo.inp)
     -o, --output <file>   Output SQLite database (default: thermo.db)
     -v, --verbose         Enable verbose logging
 
-QUERY OPTIONS:
+DATABASE OPTIONS (query, validate, migrate-metadata):
     -d, --database <file> SQLite database file (default: bundled thermo.db)
-    -s, --species <name>  Species name pattern to search (default: O2)
     -v, --verbose         Enable verbose logging
+
+QUERY OPTIONS:
+    -s, --species <name>  Species name pattern to search (default: O2)
+
+GENERAL:
+    -h, --help            Show this message
+        --version         Show the package version
 
 EXAMPLES:
     # Build database from bundled thermo.inp
@@ -279,8 +385,11 @@ EXAMPLES:
     # Query species properties (uses bundled thermo.db)
     julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CH4
 
-    # Query with custom database
-    julia --project -e 'using Glenn; Glenn.cli_main()' -- query -d my_thermo.db -s CO2
+    # Validate a database
+    julia --project -e 'using Glenn; Glenn.cli_main()' -- validate -d my_thermo.db
+
+    # Add dataset metadata to a legacy database
+    julia --project -e 'using Glenn; Glenn.cli_main()' -- migrate-metadata -d legacy.db
 """,
     )
 end
@@ -290,31 +399,49 @@ end
 # ------------------------------------------------------------------
 
 """
-    cli_main(args::Vector{String}=ARGS)
+    cli_main(args::Vector{String}=String[]) -> Int
 
-Main CLI entry point. Parses arguments and dispatches to the
-appropriate subcommand.
+Main CLI entry point. Parses arguments and dispatches to the appropriate
+subcommand.
+
+Returns `0` on success and `1` on failure, so scripts can propagate the status
+with `exit(cli_main())`.
 """
 function cli_main(args::Vector{String} = String[])
     if isempty(args)
         print_help()
-        return
+        return 0
     end
 
     parsed = parse_cli_args(args)
 
     command = parsed["command"]
 
+    if haskey(parsed, "error")
+        println(stderr, parsed["error"])
+        print_help()
+        return 1
+    end
+
     if command == "help" || command === nothing
         print_help()
+        return 0
+    elseif command == "version"
+        version = getfield(parentmodule(@__MODULE__), :__version__)
+        println("Glenn.jl v$version")
+        return 0
     elseif command == "build"
-        cmd_build(parsed)
+        return cmd_build(parsed)
     elseif command == "query"
-        cmd_query(parsed)
-    else
-        println(stderr, "Unknown command: $command")
-        print_help()
+        return cmd_query(parsed)
+    elseif command == "validate"
+        return cmd_validate(parsed)
+    elseif command == "migrate-metadata"
+        return cmd_migrate_metadata(parsed)
     end
-end
 
+    println(stderr, "Unknown command: $command")
+    print_help()
+    return 1
+end
 end # module CLI

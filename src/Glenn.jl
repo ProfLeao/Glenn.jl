@@ -50,7 +50,7 @@ module Glenn
 
 Package version string.
 """
-const __version__ = "0.4.1"
+const __version__ = "0.5.0"
 
 """
     Glenn.__author__
@@ -65,6 +65,7 @@ const __author__ = "Dr. Reginaldo G. Leão Jr."
 include("database.jl")    # SQLite queries, exceptions & NASA-7 polynomial math
 include("calculator.jl")  # High-level calculation API
 include("builder.jl")     # thermo.inp → SQLite database builder
+include("fitting.jl")     # Least-squares fitting of NASA-7 coefficients
 include("cli.jl")         # Command-line interface
 
 # Bring all public symbols into Glenn namespace
@@ -73,20 +74,37 @@ include("cli.jl")         # Command-line interface
 # Constants & types
 const R_UNIVERSAL = ThermoDatabase.R_UNIVERSAL
 const R_GLENN = ThermoDatabase.R_GLENN
+
+"""
+    R
+
+Compatibility alias of [`R_UNIVERSAL`](@ref), mirroring the `pyglenn` API.
+
+Accessible as `Glenn.R`; not exported, to avoid clashing with the very common
+local variable name `R`.
+"""
+const R = R_UNIVERSAL
+
 const Calculator = ThermoCalculator.Calculator
 const ThermoDB = ThermoDatabase.ThermoDB
 const ThermoDBBuilder = ThermoBuilder.ThermoDBBuilder
 const ThermoProperties = ThermoCalculator.ThermoProperties
 const SpeciesInfo = ThermoDatabase.SpeciesInfo
+const SpeciesData = ThermoDatabase.SpeciesData
 const NASACoefficients = ThermoDatabase.NASACoefficients
 const IntervalData = ThermoDatabase.IntervalData
 const DatabaseStats = ThermoDatabase.DatabaseStats
+const ValidationReport = ThermoDatabase.ValidationReport
+const Mixture = ThermoDatabase.Mixture
+const MixedProperties = ThermoDatabase.MixedProperties
 
 # Exception types (defined in ThermoDatabase, re-exported)
 const ThermoCalcError = ThermoDatabase.ThermoCalcError
+const ThermoError = ThermoDatabase.ThermoError
 const DatabaseNotConnectedError = ThermoDatabase.DatabaseNotConnectedError
 const SpeciesNotFoundError = ThermoDatabase.SpeciesNotFoundError
 const TemperatureOutOfRangeError = ThermoDatabase.TemperatureOutOfRangeError
+const CompositionError = ThermoDatabase.CompositionError
 
 # Database functions
 using .ThermoDatabase:
@@ -98,6 +116,10 @@ using .ThermoDatabase:
     get_species_for_temperature,
     get_statistics,
     get_gas_constant_ref,
+    get_temperature_bounds,
+    to_dict,
+    validate,
+    validate_database,
     calculate_cp,
     calculate_h,
     calculate_s
@@ -106,8 +128,13 @@ using .ThermoDatabase:
 using .ThermoCalculator:
     get_available_species,
     calculate_properties,
+    calculate_properties_range,
     calculate_formation_enthalpy,
     calculate_enthalpy_change,
+    h_sensible_to,
+    dcp_dt,
+    gamma,
+    mixture_properties,
     get_properties_range,
     default_db_path,
     default_inp_path
@@ -121,12 +148,17 @@ using .ThermoBuilder:
     parse_coefficients_record,
     is_temperature_line,
     is_coefficient_line,
+    is_species_header,
     read_thermo_file,
     connect,
     create_tables,
     parse_and_load,
+    build_database,
     write_metadata,
     migrate_metadata!
+
+# Fitting functions
+using .ThermoFitting: fit_nasa7, fit_nasa7_multi
 
 # CLI
 using .CLI: cli_main
@@ -166,15 +198,21 @@ export __version__, __author__
 
 # Types
 export Calculator, ThermoDB, ThermoDBBuilder
-export ThermoProperties, SpeciesInfo, NASACoefficients, IntervalData
+export ThermoProperties, SpeciesInfo, SpeciesData, NASACoefficients, IntervalData
 export DatabaseStats
+export ValidationReport
+export Mixture, MixedProperties
 export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
-export migrate_metadata!
+export migrate_metadata!, build_database
 
 # Exception types
 export ThermoCalcError,
-    DatabaseNotConnectedError, SpeciesNotFoundError, TemperatureOutOfRangeError
+    ThermoError,
+    DatabaseNotConnectedError,
+    SpeciesNotFoundError,
+    TemperatureOutOfRangeError,
+    CompositionError
 
 # Database functions (low-level)
 export find_species,
@@ -185,6 +223,9 @@ export find_species,
     get_species_for_temperature,
     get_statistics,
     get_gas_constant_ref,
+    to_dict,
+    validate,
+    validate_database,
     calculate_cp,
     calculate_h,
     calculate_s
@@ -192,9 +233,20 @@ export find_species,
 # Calculator functions (high-level)
 export get_available_species,
     calculate_properties,
+    calculate_properties_range,
     calculate_formation_enthalpy,
     calculate_enthalpy_change,
-    get_properties_range
+    h_sensible_to,
+    dcp_dt,
+    mixture_properties,
+    get_temperature_bounds,
+    get_properties_range   # deprecated: use calculate_properties_range
+
+# `gamma` is intentionally not exported: it clashes with SpecialFunctions.gamma.
+# Use `Glenn.gamma(calc, id, T)`.
+
+# Fitting functions
+export fit_nasa7, fit_nasa7_multi
 
 # CLI
 export cli_main
