@@ -641,6 +641,11 @@ returns up to 20 matches, with exact matches prioritised first.
 If `exact_match=true`, performs a case-insensitive exact match — only the
 species whose name matches the pattern exactly is returned (e.g. ``"N2"``
 returns only N₂, not Be₃N₂).
+
+Because the comparison folds case, a pattern may still match more than one
+species when names differ only by capitalisation (``"CO"`` matches both carbon
+monoxide `CO` and cobalt `Co`). Use `only(...)` only when the name is
+unambiguous, or compare the returned `name` field explicitly.
 """
 function find_species(tdb::ThermoDB, name::AbstractString; exact_match::Bool = false)
     if exact_match
@@ -822,6 +827,9 @@ end
 
 Find the temperature interval and coefficients valid for the given temperature.
 Returns an `IntervalData` struct, or `nothing` if out of range.
+
+When two intervals share a boundary temperature, the lower one (smallest
+`interval_number`) is returned. This is deterministic thanks to the `ORDER BY`.
 """
 function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature::Float64)
     result = SQLite.DBInterface.execute(
@@ -836,6 +844,7 @@ function get_species_for_temperature(tdb::ThermoDB, species_id::Int, temperature
     WHERE ti.species_id = ?
       AND ti.temp_min <= ?
       AND ti.temp_max >= ?
+    ORDER BY ti.interval_number
     LIMIT 1
 """,
         (species_id, temperature, temperature),

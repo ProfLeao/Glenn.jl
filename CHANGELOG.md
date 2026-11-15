@@ -30,6 +30,13 @@ All notable changes to Glenn.jl are documented in this file.
   `create_tables` / `parse_and_load` without qualification; those functions are
   not exported. The examples now use `build_database`, and the low-level steps
   are shown as `Glenn.connect` etc.
+- **Interval selection at a shared boundary is deterministic.** When two
+  intervals of the same species share a temperature (e.g. `[200, 1000]` and
+  `[1000, 6000]`), `get_species_for_temperature` issued `LIMIT 1` without an
+  `ORDER BY`, so the returned interval depended on SQLite's scan order. It now
+  orders by `interval_number` and always returns the lower interval, so
+  `calculate_properties(calc, id, 1000.0)` reports `temp_max == 1000.0`
+  consistently across platforms and across database rebuilds.
 
 ### ✨ Added
 

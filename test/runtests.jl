@@ -1644,6 +1644,189 @@ end
     end
 
     # ==================================================================
+    # Edge cases and numerical identities (v0.5.0 phase 6)
+    # ==================================================================
+    @testset "Edge cases - interval boundaries" begin
+        calc = Glenn.Calculator(db_file)   # O2 fixture: 200-1000 and 1000-6000
+
+        # Exactly at both ends of the valid range
+        @test Glenn.calculate_properties(calc, 1, 200.0).cp > 0
+        @test Glenn.calculate_properties(calc, 1, 6000.0).cp > 0
+
+        # Just outside
+        @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties(
+            calc,
+            1,
+            199.9,
+        )
+        @test_throws Glenn.TemperatureOutOfRangeError Glenn.calculate_properties(
+            calc,
+            1,
+            6000.1,
+        )
+
+        # A temperature shared by two intervals resolves to the lower one.
+        at_boundary = Glenn.calculate_properties(calc, 1, 1000.0)
+        @test (at_boundary.temp_min, at_boundary.temp_max) == (200.0, 1000.0)
+
+        below = Glenn.calculate_properties(calc, 1, 999.999)
+        above = Glenn.calculate_properties(calc, 1, 1000.001)
+        @test below.temp_max == 1000.0
+        @test above.temp_min == 1000.0
+        # Cp is continuous across the boundary
+        @test isapprox(above.cp, below.cp; rtol = 1e-4)
+
+        close(calc)
+    end
+
+    @testset "Edge cases - species lookup" begin
+        tdb = Glenn.ThermoDB(Glenn.default_db_path())
+        try
+            # The bundled dataset has many names containing "N2".
+            substring = Glenn.find_species(tdb, "N2")
+            exact = Glenn.find_species(tdb, "N2"; exact_match = true)
+            @test length(substring) > 1
+            @test length(exact) == 1
+            @test exact[1].name == "N2"
+            # Exact matches are prioritised in substring results.
+            @test substring[1].name == "N2"
+
+            # exact_match is case-insensitive...
+            @test only(Glenn.find_species(tdb, "n2"; exact_match = true)).name == "N2"
+            # ...so it can still return several species when names differ only
+            # by case: CO (carbon monoxide) and Co (cobalt).
+            co = Glenn.find_species(tdb, "CO"; exact_match = true)
+            @test length(co) >= 2
+            @test "CO" in [s.name for s in co]
+            @test "Co" in [s.name for s in co]
+
+            # Unknown species returns an empty vector, never an error
+            @test isempty(Glenn.find_species(tdb, "XYZ123"; exact_match = true))
+            @test isempty(Glenn.find_species(tdb, "XYZ123"))
+        finally
+            Glenn.ThermoDatabase.close(tdb)
+        end
+    end
+
+    @testset "Numerical identities" begin
+        calc = Glenn.Calculator(Glenn.default_db_path())
+        try
+            # NASA-7 convention: H°(298.15 K) equals the stored ΔH°f.
+            for name in ("CH4", "CO2", "H2O", "NH3")
+                sp = only(Glenn.get_available_species(calc, name; exact_match = true))
+                hf = Glenn.calculate_formation_enthalpy(calc, sp.id)
+                h298 =
+                    Glenn.calculate_properties(calc, sp.id, 298.15).h_relative
+                @test isapprox(h298, hf; atol = 1.0e-2)
+            end
+
+            # ΔH°f + sensible enthalpy == absolute enthalpy H°(T)
+            sp = only(Glenn.get_available_species(calc, "CH4"; exact_match = true))
+            hf = Glenn.calculate_formation_enthalpy(calc, sp.id)
+            for T in (500.0, 1000.0, 1500.0)
+                lhs = hf + Glenn.h_sensible_to(calc, sp.id, T)
+                rhs = Glenn.calculate_properties(calc, sp.id, T).h_relative
+                @test isapprox(lhs, rhs; atol = 1.0e-2)
+            end
+
+            # A monoatomic ideal gas has gamma = Cp/Cv = 5/3 exactly.
+            ar = only(Glenn.get_available_species(calc, "Ar"; exact_match = true))
+            gamma_ar = Glenn.gamma(calc, ar.id, 300.0)
+            @test gamma_ar ≈ 5 / 3 rtol = 1.0e-10
+            # ...and Cv = Cp - R is the definition used.
+            cp = Glenn.calculate_properties(calc, ar.id, 300.0).cp
+            @test gamma_ar ≈ cp / (cp - calc.R_ref) rtol = 1.0e-14
+
+            # Differentiating H° numerically reproduces Cp.
+            T = 800.0
+            h = 1.0e-3
+            h_plus = Glenn.calculate_properties(calc, sp.id, T + h).h_relative
+            h_minus = Glenn.calculate_properties(calc, sp.id, T - h).h_relative
+            @test (h_plus - h_minus) / (2 * h) ≈
+                  Glenn.calculate_properties(calc, sp.id, T).cp rtol = 1.0e-5
+        finally
+            close(calc)
+        end
+    end
+
+    @testset "Edge cases - mixtures and missing data" begin
+        inp_m = "test_mixedge.inp"
+        db_m = "test_mixedge.db"
+        try
+            write(
+                inp_m,
+                make_thermo_inp([
+                    ("AA", "200.0", "1000.0", "28.0000"),
+                    ("BB", "200.0", "6000.0", "32.0000"),
+                    ("CC", "200.0", "1000.0", ""),      # no molecular weight
+                ]),
+            )
+            Glenn.build_database(inp_m, db_m)
+
+            # A species with no formation enthalpy.
+            db = SQLite.DB(db_m)
+            try
+                SQLite.execute(
+                    db,
+                    "UPDATE species SET heat_of_formation_298K = NULL WHERE name = 'AA'",
+                )
+            finally
+                SQLite.close(db)
+            end
+
+            calc = Glenn.Calculator(db_m)
+            try
+                aa = only(Glenn.get_available_species(calc, "AA"; exact_match = true))
+                bb = only(Glenn.get_available_species(calc, "BB"; exact_match = true))
+                cc = only(Glenn.get_available_species(calc, "CC"; exact_match = true))
+
+                # Missing formation enthalpy returns nothing, not an error.
+                @test aa.heat_of_formation_298K === nothing
+                @test Glenn.calculate_formation_enthalpy(calc, aa.id) === nothing
+
+                # A component without a usable molar mass is rejected.
+                @test cc.molecular_weight === nothing
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 0.5), (cc.id, 0.5))),
+                    500.0,
+                )
+
+                # A mixture whose components are all out of range fails even
+                # when strict = false.
+                @test_throws Glenn.TemperatureOutOfRangeError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 1.0),)),
+                    5000.0;
+                    strict = false,
+                )
+
+                # Empty mixture and inconsistent compositions are rejected.
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(()),
+                    500.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 0.6), (bb.id, 0.6))),
+                    500.0,
+                )
+                @test_throws Glenn.CompositionError Glenn.mixture_properties(
+                    calc,
+                    Glenn.Mixture(((aa.id, 1.5), (bb.id, -0.5))),
+                    500.0,
+                )
+            finally
+                close(calc)
+            end
+        finally
+            rm(inp_m; force = true)
+            rm(db_m; force = true)
+        end
+    end
+
+    # ==================================================================
     # Edge cases
     # ==================================================================
     @testset "Edge cases" begin
