@@ -223,6 +223,38 @@ struct DatabaseStats
 end
 
 """
+    ValidationReport
+
+Result of `validate_database`.
+
+# Fields
+
+  - `valid::Bool`             : `true` when no error was found
+  - `errors::Vector{String}`  : integrity problems; any entry makes `valid` false
+  - `warnings::Vector{String}`: concerns that do not invalidate the database
+  - `counts::Dict{String, Int}`: row counts for species, intervals and coefficients
+"""
+struct ValidationReport
+    valid::Bool
+    errors::Vector{String}
+    warnings::Vector{String}
+    counts::Dict{String, Int}
+end
+
+function Base.show(io::IO, report::ValidationReport)
+    return print(
+        io,
+        "ValidationReport(valid=",
+        report.valid,
+        ", errors=",
+        length(report.errors),
+        ", warnings=",
+        length(report.warnings),
+        ")",
+    )
+end
+
+"""
     SpeciesData
 
 Complete record of a species: identification metadata plus every temperature
@@ -843,6 +875,174 @@ function get_temperature_bounds(tdb::ThermoDB, species_id::Int)
 end
 
 # ------------------------------------------------------------------
+# Integrity validation
+# ------------------------------------------------------------------
+
+"""
+    _count(db::SQLite.DB, sql::AbstractString) -> Int
+
+Run a `COUNT(*)` query and return the value as an `Int` (0 when no row).
+"""
+function _count(db::SQLite.DB, sql::AbstractString)
+    for row in SQLite.DBInterface.execute(db, sql)
+        return Int(row[1])
+    end
+    return 0
+end
+
+"""
+    validate_database(tdb::ThermoDB) -> ValidationReport
+
+Run read-only integrity and semantic checks against a database and return a
+`ValidationReport`. Nothing is modified.
+
+Checks performed:
+
+  - the `species`, `temperature_intervals` and `coefficients` tables exist;
+  - no coefficient row references a missing interval;
+  - no interval row references a missing species;
+  - every interval has exactly one coefficient row;
+  - `species.num_intervals` agrees with the stored intervals;
+  - interval bounds are present, ordered (`temp_min < temp_max`) and not degenerate;
+  - no coefficient set contains `NULL` values;
+  - no species name looks like a FORTRAN coefficient token (parser guard).
+
+Warnings (reported, but not fatal):
+
+  - missing `metadata` table or missing `gas_constant_ref` entry, which means the
+    dataset reference gas constant is unknown and `R_UNIVERSAL` is used instead;
+  - `file_metadata.total_species` not set.
+"""
+function validate_database(tdb::ThermoDB)
+    errors = String[]
+    warnings = String[]
+    counts = Dict{String, Int}()
+
+    missing_tables = [
+        table for
+        table in ("species", "temperature_intervals", "coefficients") if
+        !_table_exists(tdb.db, table)
+    ]
+    if !isempty(missing_tables)
+        push!(errors, "missing required table(s): " * join(missing_tables, ", "))
+        return ValidationReport(false, errors, warnings, counts)
+    end
+
+    counts["total_species"] = _count(tdb.db, "SELECT COUNT(*) FROM species")
+    counts["total_intervals"] = _count(
+        tdb.db,
+        "SELECT COUNT(*) FROM temperature_intervals",
+    )
+    counts["total_coeff_sets"] = _count(tdb.db, "SELECT COUNT(*) FROM coefficients")
+
+    # --- Referential integrity ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM coefficients c
+        LEFT JOIN temperature_intervals ti ON c.interval_id = ti.id
+        WHERE ti.id IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n coefficient row(s) reference a missing interval")
+
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM temperature_intervals ti
+        LEFT JOIN species s ON ti.species_id = s.id
+        WHERE s.id IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n interval row(s) reference a missing species")
+
+    # --- Exactly one coefficient set per interval ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM (
+            SELECT interval_id, COUNT(*) AS n FROM coefficients
+            GROUP BY interval_id
+        ) WHERE n != 1
+        """,
+    )
+    n > 0 && push!(errors, "$n interval(s) do not have exactly one coefficient row")
+
+    # --- num_intervals agreement ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM species s WHERE s.num_intervals != (
+            SELECT COUNT(*) FROM temperature_intervals ti
+            WHERE ti.species_id = s.id
+        )
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n species have num_intervals disagreeing with stored intervals")
+
+    # --- Bounds ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM temperature_intervals
+        WHERE temp_min IS NULL OR temp_max IS NULL OR temp_min >= temp_max
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n interval(s) have null, unordered or degenerate bounds")
+
+    # --- Coefficient completeness ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM coefficients
+        WHERE a1 IS NULL OR a2 IS NULL OR a3 IS NULL OR a4 IS NULL
+           OR a5 IS NULL OR a6 IS NULL OR a7 IS NULL OR b1 IS NULL OR b2 IS NULL
+        """,
+    )
+    n > 0 && push!(errors, "$n coefficient set(s) contain NULL values")
+
+    # --- Semantic guard: a coefficient line must never become a species ---
+    n = _count(
+        tdb.db,
+        """
+        SELECT COUNT(*) FROM species
+        WHERE name LIKE '%.%D%' OR name LIKE '%.%E%'
+        """,
+    )
+    n > 0 &&
+        push!(errors, "$n species name(s) look like FORTRAN coefficient tokens")
+
+    # --- Warnings ---
+    if _table_exists(tdb.db, "metadata")
+        n = _count(
+            tdb.db,
+            "SELECT COUNT(*) FROM metadata WHERE key = 'gas_constant_ref'",
+        )
+        n == 0 && push!(
+            warnings,
+            "metadata table has no 'gas_constant_ref' entry; R_UNIVERSAL is used instead",
+        )
+    else
+        push!(
+            warnings,
+            "database has no 'metadata' table; the reference gas constant is unknown",
+        )
+    end
+
+    if _table_exists(tdb.db, "file_metadata")
+        n = _count(
+            tdb.db,
+            "SELECT COUNT(*) FROM file_metadata WHERE id = 1 AND total_species IS NOT NULL",
+        )
+        n == 0 && push!(warnings, "file_metadata.total_species is not set")
+    end
+
+    return ValidationReport(isempty(errors), errors, warnings, counts)
+end
+
+# ------------------------------------------------------------------
 # NASA-7 polynomial calculations (dimensionless: Cp/R, H/RT, S/R)
 # ------------------------------------------------------------------
 """
@@ -916,7 +1116,8 @@ export ThermoCalcError,
     TemperatureOutOfRangeError,
     CompositionError
 export NASACoefficients, SpeciesInfo, SpeciesData, IntervalData, DatabaseStats
-export Mixture, MixedProperties, to_dict, validate
+export ValidationReport
+export Mixture, MixedProperties, to_dict, validate, validate_database
 export ThermoDB, R_UNIVERSAL, R_GLENN
 export get_gas_constant_ref, get_temperature_bounds
 

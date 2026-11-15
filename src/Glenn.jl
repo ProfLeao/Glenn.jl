@@ -93,6 +93,7 @@ const SpeciesData = ThermoDatabase.SpeciesData
 const NASACoefficients = ThermoDatabase.NASACoefficients
 const IntervalData = ThermoDatabase.IntervalData
 const DatabaseStats = ThermoDatabase.DatabaseStats
+const ValidationReport = ThermoDatabase.ValidationReport
 const Mixture = ThermoDatabase.Mixture
 const MixedProperties = ThermoDatabase.MixedProperties
 
@@ -117,6 +118,7 @@ using .ThermoDatabase:
     get_temperature_bounds,
     to_dict,
     validate,
+    validate_database,
     calculate_cp,
     calculate_h,
     calculate_s
@@ -194,6 +196,7 @@ export __version__, __author__
 export Calculator, ThermoDB, ThermoDBBuilder
 export ThermoProperties, SpeciesInfo, SpeciesData, NASACoefficients, IntervalData
 export DatabaseStats
+export ValidationReport
 export Mixture, MixedProperties
 export R_UNIVERSAL, R_GLENN
 export default_db_path, default_inp_path
@@ -218,6 +221,7 @@ export find_species,
     get_gas_constant_ref,
     to_dict,
     validate,
+    validate_database,
     calculate_cp,
     calculate_h,
     calculate_s

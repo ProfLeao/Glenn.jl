@@ -28,7 +28,6 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 Pkg.activate(REPO_ROOT; io = devnull)
 
 using Glenn
-using SQLite
 
 const DEFAULT_INP = joinpath(REPO_ROOT, "data", "thermo.inp")
 const DEFAULT_DB = joinpath(REPO_ROOT, "data", "thermo.db")
@@ -38,143 +37,23 @@ const EXPECTED_INTERVALS = 3795
 const EXPECTED_COEFFS = 3795
 
 # ------------------------------------------------------------------
-# Integrity checks (read-only)
+# Integrity checks
 # ------------------------------------------------------------------
 
-_scalar(db, sql) = first(SQLite.DBInterface.execute(db, sql))[1]
-
-_has_table(db, name) = !isempty(
-    collect(
-        SQLite.DBInterface.execute(
-            db,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            (name,),
-        ),
-    ),
-)
+# The checks themselves live in the package (`Glenn.validate_database`), so this
+# script and package users run exactly the same validation.
 
 """
-    integrity_report(db_path) -> NamedTuple
+    integrity_report(db_path) -> ValidationReport
 
-Run read-only integrity checks against a database and return
-`(valid, errors, warnings, counts)`.
+Validate a database file with `Glenn.validate_database`.
 """
 function integrity_report(db_path::AbstractString)
-    errors = String[]
-    warnings = String[]
-    counts = Dict{String, Int}()
-
-    db = SQLite.DB(db_path)
+    tdb = Glenn.ThermoDB(db_path)
     try
-        required = ("species", "temperature_intervals", "coefficients")
-        missing = [t for t in required if !_has_table(db, t)]
-        if !isempty(missing)
-            push!(errors, "missing required table(s): " * join(missing, ", "))
-            return (; valid = false, errors, warnings, counts)
-        end
-
-        counts["total_species"] = _scalar(db, "SELECT COUNT(*) FROM species")
-        counts["total_intervals"] =
-            _scalar(db, "SELECT COUNT(*) FROM temperature_intervals")
-        counts["total_coeff_sets"] = _scalar(db, "SELECT COUNT(*) FROM coefficients")
-
-        # Referential integrity
-        orphans = _scalar(
-            db,
-            "SELECT COUNT(*) FROM coefficients c
-             LEFT JOIN temperature_intervals ti ON c.interval_id = ti.id
-             WHERE ti.id IS NULL",
-        )
-        orphans > 0 &&
-            push!(errors, "$orphans coefficient row(s) reference a missing interval")
-
-        orphans = _scalar(
-            db,
-            "SELECT COUNT(*) FROM temperature_intervals ti
-             LEFT JOIN species s ON ti.species_id = s.id
-             WHERE s.id IS NULL",
-        )
-        orphans > 0 &&
-            push!(errors, "$orphans interval row(s) reference a missing species")
-
-        # Exactly one coefficient row per interval
-        dup = _scalar(
-            db,
-            "SELECT COUNT(*) FROM (
-                 SELECT interval_id, COUNT(*) AS n FROM coefficients
-                 GROUP BY interval_id
-             ) WHERE n != 1",
-        )
-        dup > 0 && push!(
-            errors,
-            "$dup interval(s) do not have exactly one coefficient row",
-        )
-
-        # num_intervals must agree with the rows actually present
-        mismatch = _scalar(
-            db,
-            "SELECT COUNT(*) FROM species s WHERE s.num_intervals != (
-                 SELECT COUNT(*) FROM temperature_intervals ti WHERE ti.species_id = s.id
-             )",
-        )
-        mismatch > 0 &&
-            push!(errors, "$mismatch species have num_intervals disagreeing with rows")
-
-        # Ordered, finite bounds
-        bad_bounds = _scalar(
-            db,
-            "SELECT COUNT(*) FROM temperature_intervals
-             WHERE temp_min IS NULL OR temp_max IS NULL OR temp_min >= temp_max",
-        )
-        bad_bounds > 0 && push!(errors, "$bad_bounds interval(s) have invalid bounds")
-
-        # Complete coefficient sets
-        bad_coeffs = _scalar(
-            db,
-            "SELECT COUNT(*) FROM coefficients WHERE a1 IS NULL OR a2 IS NULL
-             OR a3 IS NULL OR a4 IS NULL OR a5 IS NULL OR a6 IS NULL
-             OR a7 IS NULL OR b1 IS NULL OR b2 IS NULL",
-        )
-        bad_coeffs > 0 && push!(errors, "$bad_coeffs coefficient set(s) contain NULL values")
-
-        # Semantic guard: species names must not look like FORTRAN numbers
-        bad_names = _scalar(
-            db,
-            "SELECT COUNT(*) FROM species WHERE name LIKE '%.%D%' OR name LIKE '%.%E%'",
-        )
-        bad_names > 0 && push!(
-            errors,
-            "$bad_names species name(s) look like FORTRAN coefficient tokens",
-        )
-
-        # Dataset metadata
-        if _has_table(db, "metadata")
-            n = _scalar(
-                db,
-                "SELECT COUNT(*) FROM metadata WHERE key='gas_constant_ref'",
-            )
-            n == 0 && push!(warnings, "metadata table lacks 'gas_constant_ref'")
-        else
-            push!(warnings, "database has no 'metadata' table")
-        end
-
-        # Known upstream limitation: phase-transition records that reuse a
-        # species name are stored only for their first temperature range.
-        if _has_table(db, "file_metadata")
-            row = collect(
-                SQLite.DBInterface.execute(
-                    db,
-                    "SELECT total_species FROM file_metadata WHERE id = 1",
-                ),
-            )
-            if isempty(row) || row[1][1] === nothing
-                push!(warnings, "file_metadata.total_species is not set")
-            end
-        end
-
-        return (; valid = isempty(errors), errors, warnings, counts)
+        return Glenn.validate_database(tdb)
     finally
-        close(db)
+        close(tdb)
     end
 end
 

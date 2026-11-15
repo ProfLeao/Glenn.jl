@@ -32,11 +32,18 @@ Glenn.ThermoDatabase.MixedProperties
 Glenn.ThermoDatabase.ThermoDB
 ```
 
-## Mixtures and species data helpers
+## Species data helpers
 
 ```@docs
 Glenn.to_dict
 Glenn.validate
+```
+
+## Integrity validation
+
+```@docs
+Glenn.validate_database
+Glenn.ValidationReport
 ```
 
 ## Statistics

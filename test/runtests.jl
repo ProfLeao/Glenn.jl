@@ -225,7 +225,10 @@ function make_thermo_inp(records)
     coeffs_a = ["1.0D+00", "0.0D+00", "3.5D+00", "0.0D+00", "0.0D+00"]
     coeffs_b = ["0.0D+00", "0.0D+00", "0.00000000D+00", "1.0D+02", "2.0D+01"]
 
-    lines = String["THERMO", "   300.000   1000.000   5000.000"]
+    lines = String[
+        "THERMO",
+        "   300.000   1000.000   5000.000   6000.000 9/09/04",
+    ]
     for rec in records
         name, tmin, tmax = rec[1], rec[2], rec[3]
         mw = length(rec) >= 4 ? rec[4] : "31.9988"
@@ -1267,7 +1270,120 @@ end
 
         # Dataset reference constant survives a rebuild.
         @test Glenn.get_gas_constant_ref(tdb) ≈ Glenn.R_GLENN
+
+        # The shipped dataset passes every integrity check.
+        vreport = Glenn.validate_database(tdb)
+        @test vreport.valid
+        @test isempty(vreport.errors)
+        @test isempty(vreport.warnings)
+        @test vreport.counts["total_species"] == 2035
+
         Glenn.ThermoDatabase.close(tdb)
+    end
+
+    # ==================================================================
+    # Database validation (v0.5.0 phase 3)
+    # ==================================================================
+    @testset "validate_database" begin
+        inp_v = "test_validate_thermo.inp"
+        db_v = "test_validate_thermo.db"
+
+        function mutate(sql)
+            db = SQLite.DB(db_v)
+            try
+                SQLite.execute(db, sql)
+            finally
+                SQLite.close(db)
+            end
+            return nothing
+        end
+
+        function rebuild_and_validate(; sql = nothing)
+            rm(db_v, force = true)
+            Glenn.build_database(inp_v, db_v)
+            sql === nothing || mutate(sql)
+            tdb = Glenn.ThermoDB(db_v)
+            try
+                return Glenn.validate_database(tdb)
+            finally
+                close(tdb)
+            end
+        end
+
+        try
+            write(inp_v, make_thermo_inp([("AA", "200.0", "3000.0", "28.0000")]))
+
+            report = rebuild_and_validate()
+            @test report isa Glenn.ValidationReport
+            @test report.valid
+            @test isempty(report.errors)
+            @test isempty(report.warnings)
+            @test report.counts["total_species"] == 1
+            @test report.counts["total_intervals"] == 1
+            @test report.counts["total_coeff_sets"] == 1
+            @test sprint(show, report) ==
+                  "ValidationReport(valid=true, errors=0, warnings=0)"
+
+            # num_intervals disagreeing with the stored rows
+            r = rebuild_and_validate(; sql = "UPDATE species SET num_intervals = 5")
+            @test !r.valid
+            @test any(e -> occursin("num_intervals", e), r.errors)
+
+            # Unordered bounds
+            r = rebuild_and_validate(
+                ;
+                sql = "UPDATE temperature_intervals SET temp_min = 5000.0",
+            )
+            @test !r.valid
+            @test any(e -> occursin("bounds", e), r.errors)
+
+            # Incomplete coefficient set
+            r = rebuild_and_validate(; sql = "UPDATE coefficients SET a1 = NULL")
+            @test !r.valid
+            @test any(e -> occursin("NULL", e), r.errors)
+
+            # A FORTRAN token must never be accepted as a species name
+            r = rebuild_and_validate(
+                ;
+                sql = "UPDATE species SET name = '-1.302004763D+06'",
+            )
+            @test !r.valid
+            @test any(e -> occursin("FORTRAN", e), r.errors)
+
+            # Orphan coefficient rows
+            r = rebuild_and_validate(; sql = "DELETE FROM temperature_intervals")
+            @test !r.valid
+            @test any(e -> occursin("missing interval", e), r.errors)
+
+            # Missing metadata is a warning, not an error
+            r = rebuild_and_validate(; sql = "DELETE FROM metadata")
+            @test r.valid
+            @test any(w -> occursin("gas_constant_ref", w), r.warnings)
+
+            # Missing required table is fatal and reports empty counts
+            rm(db_v, force = true)
+            raw = SQLite.DB(db_v)
+            try
+                SQLite.execute(
+                    raw,
+                    "CREATE TABLE species (id INTEGER PRIMARY KEY, name TEXT)",
+                )
+            finally
+                SQLite.close(raw)
+            end
+            tdb = Glenn.ThermoDB(db_v)
+            r = try
+                Glenn.validate_database(tdb)
+            finally
+                close(tdb)
+            end
+            @test !r.valid
+            @test any(e -> occursin("missing required table", e), r.errors)
+            @test isempty(r.counts)
+        finally
+            rm(inp_v, force = true)
+            rm(db_v, force = true)
+        end
     end
 
     # ==================================================================

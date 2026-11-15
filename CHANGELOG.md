@@ -33,6 +33,13 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ✨ Added
 
+- **`validate_database(tdb)`** — read-only integrity and semantic checks
+  returning a `ValidationReport` (`valid`, `errors`, `warnings`, `counts`):
+  required tables, referential integrity, exactly one coefficient set per
+  interval, `num_intervals` agreement, ordered bounds, complete coefficient
+  sets, and the parser guard that rejects species names looking like FORTRAN
+  tokens. Missing dataset metadata is reported as a warning. The rebuild script
+  now uses it, so users and the release gate run identical checks.
 - **`calculate_properties_range(calc, id, temps; strict=false)`** — canonical
   bulk-properties function, mirroring the reference implementation. Loads the
   species intervals once, preserves input order, and skips out-of-range
