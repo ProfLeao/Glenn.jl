@@ -348,7 +348,7 @@ uuid = "f8c6e375-362e-5223-8a59-34ff63f689eb"
 version = "2.54.0+0"
 
 [[deps.Glenn]]
-deps = ["Logging", "Printf", "SQLite"]
+deps = ["LinearAlgebra", "Logging", "Printf", "SQLite"]
 path = "C:\\Users\\profr\\GitHub\\Glenn.jl"
 uuid = "d531567c-0c1c-43c6-9163-287e3bec9c15"
 version = "0.2.0"

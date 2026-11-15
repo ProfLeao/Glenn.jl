@@ -22,6 +22,7 @@ makedocs(
             "Calculator" => "calculator.md",
             "Database" => "database.md",
             "Builder" => "builder.md",
+            "Fitting" => "fitting.md",
             "CLI" => "cli.md",
         ],
         "Examples" => [

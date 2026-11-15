@@ -33,6 +33,16 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ✨ Added
 
+- **`fit_nasa7(temperatures, cp_values; t_ref, h_ref, s_ref, weights, r_ref)`**
+  — weighted least-squares fit of the seven NASA-7 heat-capacity coefficients to
+  tabulated `Cp(T)` data. The enthalpy constant `b1` is derived so that
+  `H°(t_ref) == h_ref` holds exactly (`b1`, not `a6`, is the integration
+  constant); `b2` comes from `s_ref` when given. Round-trips exact polynomial
+  data to ~1e-12 relative error.
+- **`fit_nasa7_multi(temperatures, cp_values, breakpoints; ...)`** — one
+  coefficient set per interval, with `Cp/R` and its first derivative constrained
+  to be continuous at every breakpoint, and `H°`/`S°` propagated so they are
+  continuous too. Returns one `NASACoefficients` per interval.
 - **`validate_database(tdb)`** — read-only integrity and semantic checks
   returning a `ValidationReport` (`valid`, `errors`, `warnings`, `counts`):
   required tables, referential integrity, exactly one coefficient set per

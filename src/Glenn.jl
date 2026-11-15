@@ -65,6 +65,7 @@ const __author__ = "Dr. Reginaldo G. Leão Jr."
 include("database.jl")    # SQLite queries, exceptions & NASA-7 polynomial math
 include("calculator.jl")  # High-level calculation API
 include("builder.jl")     # thermo.inp → SQLite database builder
+include("fitting.jl")     # Least-squares fitting of NASA-7 coefficients
 include("cli.jl")         # Command-line interface
 
 # Bring all public symbols into Glenn namespace
@@ -156,6 +157,9 @@ using .ThermoBuilder:
     write_metadata,
     migrate_metadata!
 
+# Fitting functions
+using .ThermoFitting: fit_nasa7, fit_nasa7_multi
+
 # CLI
 using .CLI: cli_main
 
@@ -240,6 +244,9 @@ export get_available_species,
 
 # `gamma` is intentionally not exported: it clashes with SpecialFunctions.gamma.
 # Use `Glenn.gamma(calc, id, T)`.
+
+# Fitting functions
+export fit_nasa7, fit_nasa7_multi
 
 # CLI
 export cli_main

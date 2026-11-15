@@ -664,6 +664,144 @@ end
     end
 
     # ==================================================================
+    # NASA-7 fitting (v0.5.0 phase 4)
+    # ==================================================================
+    @testset "NASA-7 fitting" begin
+        # O2 low-temperature coefficients used as the "truth".
+        truth = Glenn.NASACoefficients(
+            -3.42556342e+04,
+            4.84700097e+02,
+            1.11901096e+00,
+            4.29388924e-03,
+            -6.83630052e-07,
+            -2.02337270e-09,
+            1.03904002e-12,
+            -3.39145487e+03,
+            1.84969947e+01,
+        )
+        Ts = collect(range(200.0, 1000.0, length=60))
+        cps = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Ts]
+
+        @testset "fit_nasa7 round-trip" begin
+            fit = Glenn.fit_nasa7(Ts, cps)
+            @test fit isa Glenn.NASACoefficients
+            for f in (:a1, :a2, :a3, :a4, :a5, :a6, :a7)
+                @test isapprox(getfield(fit, f), getfield(truth, f); rtol = 1e-8)
+            end
+            for T in (300.0, 500.0, 800.0)
+                @test Glenn.calculate_cp(fit, T) ≈ Glenn.calculate_cp(truth, T) rtol = 1e-9
+            end
+        end
+
+        @testset "fit_nasa7 enthalpy convention" begin
+            # H°(t_ref) == h_ref by construction: b1 is the enthalpy constant.
+            fit = Glenn.fit_nasa7(Ts, cps; t_ref = 298.15, h_ref = -74_800.0)
+            @test Glenn.calculate_h(fit, 298.15) * 298.15 * Glenn.R_GLENN ≈
+                  -74_800.0 rtol = 1e-12
+            # Anchoring the enthalpy does not disturb the a-coefficients.
+            @test isapprox(fit.a6, truth.a6; rtol = 1e-8)
+            @test isapprox(fit.a7, truth.a7; rtol = 1e-8)
+        end
+
+        @testset "fit_nasa7 entropy anchor" begin
+            fit = Glenn.fit_nasa7(Ts, cps; s_ref = 188.0)
+            @test Glenn.calculate_s(fit, 298.15) * Glenn.R_GLENN ≈ 188.0 rtol = 1e-12
+            @test fit.b2 != 0.0
+            # Without s_ref the entropy constant is zero.
+            @test Glenn.fit_nasa7(Ts, cps).b2 == 0.0
+        end
+
+        @testset "fit_nasa7 weights" begin
+            fit_w = Glenn.fit_nasa7(Ts, cps; weights = ones(length(Ts)))
+            fit_u = Glenn.fit_nasa7(Ts, cps)
+            @test isapprox(fit_w.a3, fit_u.a3; rtol = 1e-12)
+            @test isapprox(fit_w.a6, fit_u.a6; rtol = 1e-12)
+        end
+
+        @testset "fit_nasa7 input validation" begin
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts[1:5], cps[1:5])
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts, cps[1:10])
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                [-1.0; Ts[2:end]],
+                cps,
+            )
+            @test_throws ArgumentError Glenn.fit_nasa7(Ts, cps; t_ref = 0.0)
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                Ts,
+                cps;
+                weights = fill(-1.0, length(Ts)),
+            )
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                Ts,
+                cps;
+                weights = zeros(length(Ts)),
+            )
+            # Repeated temperatures cannot determine seven coefficients.
+            @test_throws ArgumentError Glenn.fit_nasa7(
+                fill(300.0, 10),
+                fill(30.0, 10),
+            )
+        end
+
+        @testset "fit_nasa7_multi continuity" begin
+            Tm = collect(range(300.0, 1500.0, length=60))
+            cpm = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Tm]
+            Tb = 900.0
+            fits = Glenn.fit_nasa7_multi(
+                Tm,
+                cpm,
+                [Tb];
+                t_ref = 298.15,
+                h_ref = 0.0,
+                s_ref = 180.0,
+            )
+
+            @test length(fits) == 2
+            @test all(f -> f isa Glenn.NASACoefficients, fits)
+
+            # Cp is continuous at the breakpoint, and so is its derivative.
+            @test Glenn.calculate_cp(fits[1], Tb) ≈ Glenn.calculate_cp(fits[2], Tb) rtol =
+                1e-8
+            h = 1.0e-4
+            d_left =
+                (Glenn.calculate_cp(fits[1], Tb) - Glenn.calculate_cp(fits[1], Tb - h)) / h
+            d_right =
+                (Glenn.calculate_cp(fits[2], Tb + h) - Glenn.calculate_cp(fits[2], Tb)) / h
+            @test d_left ≈ d_right rtol = 1e-2
+
+            # H° and S° are continuous across the breakpoint.
+            @test Glenn.calculate_h(fits[1], Tb) * Tb ≈
+                  Glenn.calculate_h(fits[2], Tb) * Tb rtol = 1e-9
+            @test Glenn.calculate_s(fits[1], Tb) ≈ Glenn.calculate_s(fits[2], Tb) rtol =
+                1e-9
+
+            # The anchors land in the interval that contains t_ref.
+            @test Glenn.calculate_h(fits[1], 298.15) * 298.15 * Glenn.R_GLENN ≈ 0.0 atol =
+                1e-6
+            @test Glenn.calculate_s(fits[1], 298.15) * Glenn.R_GLENN ≈ 180.0 rtol = 1e-12
+
+            # A single underlying polynomial is recovered in both intervals.
+            @test isapprox(fits[1].a3, truth.a3; rtol = 1e-6)
+            @test isapprox(fits[2].a3, truth.a3; rtol = 1e-6)
+        end
+
+        @testset "fit_nasa7_multi input validation" begin
+            Tm = collect(range(300.0, 1500.0, length=60))
+            cpm = [Glenn.calculate_cp(truth, T) * Glenn.R_GLENN for T in Tm]
+
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, Float64[])
+            # Breakpoints must lie strictly inside the temperature range.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [200.0])
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1600.0])
+            # Strictly increasing.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1000.0, 800.0])
+            # Every interval needs at least seven points.
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm, [1490.0])
+            @test_throws ArgumentError Glenn.fit_nasa7_multi(Tm, cpm[1:10], [1000.0])
+        end
+    end
+
+    # ==================================================================
     # Calculator (high-level API)
     # ==================================================================
     @testset "Calculator - High-level API" begin
