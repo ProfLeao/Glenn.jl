@@ -1,0 +1,70 @@
+cff-version: 1.2.0
+message: "If you use Glenn.jl in academic work, please cite it as below."
+title: "Glenn.jl: NASA-7 thermochemical properties in Julia"
+abstract: >-
+  Glenn.jl provides Cp(T), H°(T) and S°(T) for 2035 species by evaluating the
+  NASA-7 polynomial coefficients of the NASA Glenn CEA thermodynamic database,
+  which is bundled as an SQLite file so that no configuration is required.
+  The package offers species lookup, mixtures, sensible- and total-enthalpy
+  helpers, analytic Cp derivatives, a database integrity validator, a
+  least-squares fitter for NASA-7 coefficients, and a command-line interface
+  for building and inspecting databases. Results are cross-validated against
+  the NIST-JANAF Thermochemical Tables for seven reference species.
+type: software
+authors:
+  - family-names: Leão
+    given-names: Reginaldo G.
+    name-particle: ""
+    affiliation: ""
+license: MIT
+version: 0.5.0
+date-released: 2026-11-15
+repository-code: "https://github.com/ProfLeao/Glenn.jl"
+url: "https://profleao.github.io/Glenn.jl/"
+keywords:
+  - thermochemistry
+  - nasa-7 polynomials
+  - thermodynamic properties
+  - heat capacity
+  - enthalpy
+  - entropy
+  - combustion
+  - julia
+references:
+  - type: software
+    title: "pyglenn: Python implementation of the Glenn thermochemical library"
+    authors:
+      - family-names: Leão
+        given-names: Reginaldo G.
+    repository-code: "https://github.com/ProfLeao/pyglenn"
+    license: MIT
+    notes: >-
+      Python counterpart of Glenn.jl. Shares the same dataset and the same
+      NASA-7 evaluation conventions.
+  - type: generic
+    title: >-
+      NASA Glenn Coefficients for Calculating Thermodynamic Properties of
+      Individual Species
+    authors:
+      - family-names: McBride
+        given-names: Bonnie J.
+      - family-names: Zehe
+        given-names: Michael J.
+      - family-names: Gordon
+        given-names: Sanford
+    report-number: NASA/TP-2002-211556
+    publisher:
+      name: NASA Glenn Research Center
+    year: 2002
+    notes: "Source of the bundled thermodynamic coefficients (public domain)."
+  - type: generic
+    title: "NIST-JANAF Thermochemical Tables, 4th edition"
+    authors:
+      - family-names: Chase
+        given-names: Malcolm W.
+        name-suffix: Jr.
+    journal: Journal of Physical and Chemical Reference Data
+    issue: Monograph 9
+    year: 1998
+    doi: "10.18434/T42S31"
+    notes: "Reference data used for cross-validation."

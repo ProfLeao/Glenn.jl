@@ -37,6 +37,12 @@ All notable changes to Glenn.jl are documented in this file.
   orders by `interval_number` and always returns the lower interval, so
   `calculate_properties(calc, id, 1000.0)` reports `temp_max == 1000.0`
   consistently across platforms and across database rebuilds.
+- **`docs/audit/audit.jl` no longer aborts on the first species.**
+  `props` and `ref` were assigned inside a `try` block and read outside it, but
+  `try` introduces its own scope, so the second iteration raised
+  `UndefVarError`. Both are now declared before the block. The summary text also
+  claimed Cp agreement "below 1% RMSE for all species"; the measured H₂O value is
+  1.09%, so the note now states the real figure.
 
 ### ✨ Added
 
@@ -85,7 +91,8 @@ All notable changes to Glenn.jl are documented in this file.
   warning is logged.
 - **`get_temperature_bounds(tdb, id)`** — overall `(T_min, T_max)` covered by a
   species. `TemperatureOutOfRangeError` now reports the valid range in its
-  message and carries it in `temp_bounds`.
+  message and carries it in `temp_bounds`. It also accepts a `Calculator`
+  directly, like the rest of the high-level API.
 - **`build_database(inp, db; merge_duplicates=true)`** — one-call database build
   that always closes the connection, even when parsing fails.
 - **`parse_and_load(builder; merge_duplicates)`** — set to `false` to keep only
@@ -108,6 +115,27 @@ All notable changes to Glenn.jl are documented in this file.
 - **`ThermoError`** — generic concrete `ThermoCalcError`.
 - **`Glenn.R`** — compatibility alias of `R_UNIVERSAL`, mirroring the `pyglenn`
   API. Not exported, to avoid clashing with the common local variable name `R`.
+- **Cheat sheet** — `docs/src/cheat_sheet.md` collects the whole public API on a
+  single page and is published as part of the manual; `docs/cheat_sheet/cheat_sheet.pdf`
+  is the printable two-page version, generated from that same source.
+- **`COMPATIBILITY_CONTRACT.md`** — states what the package guarantees to keep
+  stable (exports, field names, units, exception hierarchy, temperature and
+  interval semantics, numerical tolerances, dataset contents, database schema,
+  CLI exit codes), what it explicitly does not (species IDs, message wording,
+  performance, underscore-prefixed names), the deprecation policy and the
+  supported Julia versions. Each clause is tied to the test that enforces it.
+- **`CITATION.cff`** and a README *Citation* section, with a BibTeX entry and the
+  reference to cite for the NASA Glenn coefficients themselves. No DOI is baked
+  in: the badge is minted by Zenodo when a release is tagged, and the README
+  carries the template ready to enable.
+- **`NOTICE`** — attribution for the project lineage, the public-domain NASA
+  Glenn thermodynamic data, the NIST-JANAF reference used for validation, and
+  every third-party dependency.
+- **Validation figures** — `docs/audit/audit.jl` now also writes three SVG plots
+  (Cp agreement, Cp relative deviation, S° relative deviation) for the
+  documentation, and the new *Validation against NIST-JANAF* manual page reports
+  the per-species RMSE table. Plotting is optional: without `--project=docs` the
+  CSV and text summary are still produced and only the figures are skipped.
 
 ### 🔧 Changed
 

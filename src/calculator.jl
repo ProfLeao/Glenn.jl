@@ -504,6 +504,17 @@ function mixture_properties(
     )
 end
 
+"""
+    get_temperature_bounds(calc::Calculator, species_id::Int) -> Union{Tuple{Float64, Float64}, Nothing}
+
+Overall `(T_min, T_max)` covered by a species, or `nothing` when the species has
+no intervals. Convenience method of
+[`Glenn.ThermoDatabase.get_temperature_bounds`](@ref) for the high-level API.
+"""
+function ThermoDatabase.get_temperature_bounds(calc::Calculator, species_id::Int)
+    return ThermoDatabase.get_temperature_bounds(calc.db, species_id)
+end
+
 # Deprecated 0.4.x name, kept for backwards compatibility.
 # (`Base.@deprecate` expands to an `export` plus a method definition, so it
 # cannot carry a docstring.)

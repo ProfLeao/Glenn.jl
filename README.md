@@ -152,10 +152,17 @@ propagates it, so the CLI can gate a CI step.
 Run the cross-validation audit to compare Glenn.jl against NIST-JANAF reference data:
 
 ```bash
-julia --project docs/audit/audit.jl
+julia --project=docs docs/audit/audit.jl
 ```
 
-Outputs: `glenn_vs_nist.csv` (point-by-point comparison) and `validation_summary.txt` (aggregated statistics).
+Outputs: `glenn_vs_nist.csv` (point-by-point comparison),
+`validation_summary.txt` (aggregated statistics) and three SVG figures under
+`docs/src/assets/audit/`. The [validation page](https://profleao.github.io/Glenn.jl/validation/)
+reproduces the numbers and the plots.
+
+Cp and S° agree with NIST-JANAF to within 1.1% RMSE for all seven species; see
+the page for the per-species table and for what the comparison does *not*
+validate.
 
 ## API Reference
 
@@ -262,9 +269,61 @@ things need attention:
 See the [migration guide](https://profleao.github.io/Glenn.jl/migration/) for
 before/after examples and a post-upgrade check script.
 
+## Compatibility
+
+[`COMPATIBILITY_CONTRACT.md`](COMPATIBILITY_CONTRACT.md) states exactly what the
+package promises to keep stable: the public API, units, the exception hierarchy,
+temperature and interval semantics, the numerical guarantees, the database
+schema, the CLI contract, the deprecation policy and the supported Julia
+versions. It also says what is explicitly *not* covered — species IDs, error
+message wording, performance, and anything underscore-prefixed.
+
+Read it before pinning Glenn.jl in a long-lived project: it is the document that
+tells you whether an upgrade can break you.
+
 ## Documentation
 
 Full documentation is available at [profleao.github.io/Glenn.jl/](https://profleao.github.io/Glenn.jl/).
+
+* **[Cheat sheet](docs/cheat_sheet/cheat_sheet.pdf)** — two-page printable reference
+* **[Validation against NIST-JANAF](https://profleao.github.io/Glenn.jl/validation/)** — plots and error tables
+* **[Migrating to 0.5.0](https://profleao.github.io/Glenn.jl/migration/)** — every breaking change, with before/after code
+* **[Compatibility contract](COMPATIBILITY_CONTRACT.md)** — what is stable and what is not
+
+## Citation
+
+If Glenn.jl contributes to a publication, please cite it. Machine-readable
+metadata lives in [`CITATION.cff`](CITATION.cff) (GitHub renders a *Cite this
+repository* button from it):
+
+```bibtex
+@software{Leao_Glenn_jl,
+  author  = {Le{\~a}o, Reginaldo G.},
+  title   = {Glenn.jl: NASA-7 thermochemical properties in Julia},
+  version = {0.5.0},
+  year    = {2026},
+  url     = {https://github.com/ProfLeao/Glenn.jl},
+  license = {MIT}
+}
+```
+
+Results obtained with the bundled coefficients should also cite the original
+data source:
+
+> McBride, B. J., Zehe, M. J., and Gordon, S. (2002). *NASA Glenn Coefficients
+> for Calculating Thermodynamic Properties of Individual Species.*
+> NASA/TP-2002-211556. NASA Glenn Research Center.
+
+See [`NOTICE`](NOTICE) for the complete attribution of data and third-party
+software.
+
+<!-- A DOI is minted by Zenodo when a release is tagged. Once the record exists,
+     enable the badge above the installation section and add the DOI to
+     CITATION.cff:
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+
+-->
 
 ## License
 
