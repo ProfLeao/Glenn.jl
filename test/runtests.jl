@@ -255,6 +255,35 @@ function make_thermo_inp(records)
     return join(lines, "\n") * "\n"
 end
 
+"""
+    capture_output(f) -> (; status, out, err)
+
+Run `f`, capturing everything it prints to stdout and stderr plus its return
+value.
+"""
+function capture_output(f)
+    out_path, out_io = mktemp()
+    err_path, err_io = mktemp()
+    status = nothing
+    try
+        redirect_stdout(out_io) do
+            redirect_stderr(err_io) do
+                status = f()
+            end
+        end
+    finally
+        flush(out_io)
+        flush(err_io)
+    end
+    out = read(out_path, String)
+    err = read(err_path, String)
+    close(out_io)
+    close(err_io)
+    rm(out_path; force = true)
+    rm(err_path; force = true)
+    return (; status, out, err)
+end
+
 # ------------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------------
@@ -1318,6 +1347,96 @@ end
                 close(rd)
             end
             @test true  # No crash = pass
+        end
+    end
+
+    # ==================================================================
+    # CLI - Phase 5 commands (validate, migrate-metadata, version)
+    # ==================================================================
+    @testset "CLI - Phase 5 commands" begin
+        @testset "version and help" begin
+            r = capture_output(() -> Glenn.cli_main(["--version"]))
+            @test r.status == 0
+            @test occursin("Glenn.jl v", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(["-h"]))
+            @test r.status == 0
+            @test occursin("validate", r.out)
+            @test occursin("migrate-metadata", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(String[]))
+            @test r.status == 0
+            @test occursin("USAGE", r.out)
+        end
+
+        @testset "unknown arguments fail" begin
+            r = capture_output(() -> Glenn.cli_main(["bogus"]))
+            @test r.status == 1
+            @test occursin("Unknown command", r.err)
+
+            r = capture_output(() -> Glenn.cli_main(["--bogus"]))
+            @test r.status == 1
+            @test occursin("Unknown option", r.err)
+        end
+
+        @testset "validate" begin
+            r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_file]))
+            @test r.status == 0
+            @test occursin("[SUCCESS]", r.out)
+            @test occursin("Species:", r.out)
+
+            r = capture_output(() -> Glenn.cli_main(["validate", "-d", "no_such.db"]))
+            @test r.status == 1
+            @test occursin("not found", r.err)
+        end
+
+        @testset "migrate-metadata and inconsistent database" begin
+            inp_c = "test_cli_thermo.inp"
+            db_c = "test_cli_thermo.db"
+            try
+                write(inp_c, make_thermo_inp([("AA", "200.0", "3000.0", "28.0000")]))
+                Glenn.build_database(inp_c, db_c)
+
+                # Missing reference constant is a warning, not a failure.
+                db = SQLite.DB(db_c)
+                try
+                    SQLite.execute(db, "DELETE FROM metadata")
+                finally
+                    SQLite.close(db)
+                end
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 0
+                @test occursin("gas_constant_ref", r.out)
+
+                # migrate-metadata restores it.
+                r = capture_output(
+                    () -> Glenn.cli_main(["migrate-metadata", "-d", db_c]),
+                )
+                @test r.status == 0
+                @test occursin("[SUCCESS]", r.out)
+                @test occursin("gas_constant_ref", r.out)
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 0
+                @test !occursin("[warn]", r.out)
+
+                # An inconsistent database must fail.
+                db = SQLite.DB(db_c)
+                try
+                    SQLite.execute(db, "UPDATE species SET num_intervals = 99")
+                finally
+                    SQLite.close(db)
+                end
+
+                r = capture_output(() -> Glenn.cli_main(["validate", "-d", db_c]))
+                @test r.status == 1
+                @test occursin("[FAIL]", r.out)
+                @test occursin("num_intervals", r.out)
+            finally
+                rm(inp_c, force = true)
+                rm(db_c, force = true)
+            end
         end
     end
 

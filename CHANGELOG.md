@@ -33,7 +33,16 @@ All notable changes to Glenn.jl are documented in this file.
 
 ### ✨ Added
 
-- **`fit_nasa7(temperatures, cp_values; t_ref, h_ref, s_ref, weights, r_ref)`**
+- **CLI `validate` and `migrate-metadata`** — `validate` runs the same
+  read-only checks as `validate_database` and exits with status `1` when the
+  database is inconsistent; `migrate-metadata` adds the dataset reference gas
+  constant to a legacy database without touching thermochemical rows. Also adds
+  `--version`.
+- **CLI exit status** — `cli_main` and every `cmd_*` now return `0`/`1`, and
+  `bin/glenn.jl` propagates it with `exit(...)`, so the CLI can gate a CI step.
+  Unknown commands and options are reported on stderr and fail instead of
+  silently printing the help text and succeeding.
+- **`fit_nasa7(temperatures, cp_values; t_ref, h_ref, s_ref, weights, r_ref)`****
   — weighted least-squares fit of the seven NASA-7 heat-capacity coefficients to
   tabulated `Cp(T)` data. The enthalpy constant `b1` is derived so that
   `H°(t_ref) == h_ref` holds exactly (`b1`, not `a6`, is the integration

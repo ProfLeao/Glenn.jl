@@ -135,10 +135,17 @@ julia --project -e 'using Glenn; Glenn.cli_main()' -- query -s CO2
 # Or use the convenience script
 julia --project bin/glenn.jl query -s O2
 
+# Integrity checks and legacy-database migration
+julia --project bin/glenn.jl validate
+julia --project bin/glenn.jl migrate-metadata -d legacy.db
+
 # Database rebuild (only if needed — see section above)
 julia --project -e 'using Glenn; Glenn.cli_main()' -- build
 julia --project bin/glenn.jl build -i custom.inp -o custom.db
 ```
+
+`cli_main` returns `0` on success and `1` on failure, and `bin/glenn.jl`
+propagates it, so the CLI can gate a CI step.
 
 ### Validation
 
